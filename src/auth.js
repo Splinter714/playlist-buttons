@@ -85,6 +85,11 @@ export async function beginLogin() {
     code_challenge: await challengeFor(verifier),
     state,
     scope: SCOPES.join(' '),
+    // Always show Spotify's account/approval screen, even when the browser already has
+    // a live Spotify session. Without this, logging in silently adopts whoever happens
+    // to be signed in — which is wrong on a shared or previously-used device, and gives
+    // no way to pick a different account.
+    show_dialog: 'true',
   });
   location.assign(`${AUTH_ENDPOINT}?${params}`);
 }

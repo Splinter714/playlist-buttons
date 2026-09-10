@@ -449,46 +449,23 @@ httpRequest({
 });
 setVariable('playResult');
 
-// 6. A successful play returns 204 with an empty body; any failure returns a
-//    JSON body containing "error". The commonest is "no active device", so on
-//    any error pick a device and retry against it explicitly. Passing
-//    ?device_id= both transfers and plays, which is one call instead of a
-//    separate PUT /me/player transfer.
-comment('If play failed, find a device and retry against it');
-getVariable('playResult');
-const playFailed = ifContains('error');
-
-httpRequest({ url: `${API}/me/player/devices`, headers: authHeaders() });
-// This one really does want the preceding HTTP response, not the shortcut's input.
-getDictionaryFromInput({ fromPrevious: true });
-getValueForKey('devices');
-getFirstItem();
-getValueForKey('id');
-setVariable('deviceId');
-
-wait(real(DEVICE_TRANSFER_SETTLE_SECONDS));
-
-httpRequest({
-  url: tokenString(`${API}/me/player/play?device_id=`, varRef('deviceId')),
-  method: 'PUT',
-  headers: authHeaders(),
-  json: playBody(),
-});
-setVariable('retryResult');
-
-// 7. Still failing: put the volume back where we found it and say why.
-comment('Still failing: restore volume and report');
-getVariable('retryResult');
-const retryFailed = ifContains('error');
-setVolume(tokenAttachment(varRef('V0')));
-showAlert(
-  'Playlist Buttons',
-  tokenString("Couldn't start playback.\n\n", varRef('retryResult'))
-);
-stopShortcut();
-endIf(retryFailed);
-
-endIf(playFailed);
+// 6. No error recovery, deliberately.
+//
+//    There used to be a "if the play call returned an error, find a device and retry
+//    against it, otherwise restore the volume and say why" block here, built on two
+//    If actions. Every shape tried for a conditional rendered with a blank condition on
+//    device, across several rebuilds, and Jackson eventually pulled them out by hand to
+//    get a working shortcut. So they are gone from the generator too, rather than
+//    regenerating something known broken.
+//
+//    What that costs, should it be worth revisiting:
+//      - no recovery when Spotify is not the active device. The play call just fails and
+//        the music carries on unchanged.
+//      - no error surfaced. A failed transition is silent; the fade dips and comes back
+//        with the same playlist still playing.
+//
+//    Tracked separately rather than left as a comment — see the issue referenced in
+//    shortcut/README.md.
 
 // 8. Fade back in to V0. upMs of 0 makes every wait 0, so the ramp collapses to
 //    an effectively instant jump back to V0 — which is what nofadein wants,
@@ -498,6 +475,15 @@ ramp({
   durationVar: 'upMs',
   fractionParts: [varRef('V0'), ' * ', varRef('Repeat Index'), ` / ${STEPS}`],
 });
+
+// 9. End on an empty result.
+//
+//    Without this the shortcut's result is whatever the fade-in Repeat produced — a list
+//    of twelve volume numbers — and Shortcuts offers to hand that back every single run,
+//    which means a prompt on every playlist change.
+comment('End with no output, so Shortcuts has nothing to hand back');
+act('is.workflow.actions.gettext', { WFTextActionText: '' });
+stopShortcut();
 
 // ---------------------------------------------------------------------------
 // Emit
