@@ -94,10 +94,10 @@ from here.
    not from here. It is `true` for an ordinary playlist and `false` for one
    marked "no shuffle" in settings, which also arrives with `offset: 0` (#10).
 5. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
-6. **Open URLs → `return_url`**, handing the phone straight back to the app now
-   that the playlist is playing, so the fade-in happens with the app on screen
-   instead of with Shortcuts on screen. Set `RETURN_EARLY = false` in
-   `build.mjs` to drop this action.
+6. **Open App → Safari**, handing the phone straight back to the app now that
+   the playlist is playing, so the fade-in happens with the app on screen instead
+   of with Shortcuts on screen. `RETURN_VIA` in `build.mjs` picks the mechanism —
+   `'app'`, `'url'`, or `false` for neither.
 7. Fade back in to `V0` over `upMs` — behind the app, if step 6 worked.
 
 There is no error recovery in the list, and that is not an omission — see
@@ -147,8 +147,23 @@ because it was a *retry*. Done unconditionally — always `GET
 
 `x-success` is Shortcuts' own mechanism and only fires when the run *finishes*,
 which is the whole duration of the transition — both ramps plus request latency.
-So the return is an explicit **Open URLs** action placed right after the play
-call, opening `return_url` from the input.
+So the return is an explicit action placed right after the play call. `RETURN_VIA`
+picks which:
+
+**`'app'` — Open App → Safari.** The default. Brings the tab forward exactly as
+it was, with no reload, so the grid is simply back. It cannot target the web app
+itself: Shortcuts' Open App does not list installed web apps (tested on device
+2026-09-09, recorded in `src/handoff.js`). Safari is the right target regardless,
+since that is where the app is used from — the same finding established that a
+Home Screen web app cannot be returned to at all.
+
+**`'url'` — Open URLs → `return_url` from the input.** Lands on the exact page
+rather than on whatever tab happens to be frontmost, at the cost of navigating
+that tab, which reloads it. Worth switching to if Safari comes forward on the
+wrong tab.
+
+Not reloading costs nothing, incidentally: `x-success` fires at the end of the
+run and reloads anyway, and that is what re-rolls each tile's random offset.
 
 `x-success` is still sent and still fires at the end. That is deliberate: if the
 Open URLs action does not switch apps on some iOS version, or the run is
@@ -162,7 +177,7 @@ on screen saying so. Test it: transition, and check the volume comes all the way
 back — with the phone unlocked, with it locked, and with another app in front.
 Also try tapping a second tile mid-transition; the old behaviour made overlapping
 runs impossible by keeping the app off screen, and this removes that interlock.
-If the volume is unreliable, `RETURN_EARLY = false` puts it back.
+If the volume is unreliable, `RETURN_VIA = false` puts it back.
 
 ## What I'm confident about vs. what's a guess
 
@@ -332,7 +347,8 @@ the dyld shared cache), so these four could not be verified locally:
 | 2 | `WFDeviceDetail: "Current Volume"` on Get Device Details | Action imports but the dropdown reads "Device Name" or similar; the fade jumps to a weird level or does nothing, because `V0` is text not a number | Open the action and pick Volume from its menu |
 | 3 | `is.workflow.actions.calculateexpression` with parameter `Input` | Broken placeholder where each ramp's calculation should be; the ramps do nothing | Retype the expression — it's `V0 × (20 − Repeat Index) ÷ 20` for the fade out and `V0 × Repeat Index ÷ 20` for the fade in, using whatever `STEPS` is set to |
 | 4 | `Repeat Index` as a magic variable, referenced as `{Type: "Variable", VariableName: "Repeat Index"}` | Ramps run but every step sets the same volume, so the fade is a single step | Re-pick the Repeat Index variable inside the calculation |
-| 5 | `is.workflow.actions.openurl` taking `WFInput` from a `url` action above it | The transition works but never returns to the app early — you sit in Shortcuts for the whole fade, exactly as before, and only `x-success` brings you back | Open the action and re-pick the URL, or set `RETURN_EARLY = false` and live with the app switch |
+| 5 | `is.workflow.actions.openapp` carrying both `WFAppIdentifier` and `WFSelectedApp` for `com.apple.mobilesafari` | Broken or blank placeholder where an Open App action should be, or it imports but shows no app — you sit in Shortcuts for the whole fade, exactly as before, and only `x-success` brings you back | Open the action and pick Safari from its menu, or set `RETURN_VIA = 'url'` |
+| 6 | `is.workflow.actions.openurl` taking `WFInput` from a `url` action above it — only emitted when `RETURN_VIA = 'url'` | Same symptom as above: no early return | Open the action and re-pick the URL, or set `RETURN_VIA = false` and live with the app switch |
 
 Two smaller ones:
 

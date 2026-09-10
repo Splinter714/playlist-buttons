@@ -53,11 +53,13 @@ web app  ──shortcuts://x-callback-url──▶  shortcut
 One visible app switch per transition — Safari to Shortcuts and back. Audio
 continues throughout.
 
-The switch is as short as it can be made: the shortcut opens the app's own URL
-itself, in an Open URLs action placed right after the play call, so the phone is
-back in Safari as soon as the new playlist is playing and the fade-in finishes
-behind it. `x-success` is still sent and still fires when the run ends, as a
-backstop for the case where that action does not switch apps.
+The switch is as short as it can be made: an Open App action right after the play
+call brings Safari straight back, so the phone is on the grid again as soon as the
+new playlist is playing and the fade-in finishes behind it. Safari, not the web
+app — Shortcuts' Open App does not list installed web apps, and the app is used
+from a Safari tab for the same reason. `x-success` is still sent and still fires
+when the run ends, as a backstop and as the reload that re-rolls each tile's
+random offset.
 
 ### Why the app switch can't be avoided
 

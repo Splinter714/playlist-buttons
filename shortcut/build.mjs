@@ -24,16 +24,30 @@ import { fileURLToPath } from 'node:url';
 const STEPS = 20;
 
 /**
- * Hand the phone back to Safari as soon as the new playlist is playing, and let the
- * fade-in finish behind it — rather than sitting in Shortcuts for the whole transition.
+ * How the shortcut hands the phone back, as soon as the new playlist is playing, rather
+ * than leaving you in Shortcuts for the whole transition. The fade-in then finishes
+ * behind the app.
  *
- * Set false to go back to the old behaviour, where the ONLY return is `x-success` firing
- * when the run completes. Worth knowing before trusting it: what runs after this point is
- * the fade-in, so a run that iOS suspends in the background leaves system volume part way
- * down with the music still playing. `x-success` is still sent, so the app is reached
- * either way; this only decides whether it is reached early.
+ *   'app'   Open App → Safari. Brings the tab forward exactly as it was, with NO reload,
+ *           which makes it the smoother of the two — the grid is simply there again.
+ *           It cannot target the web app itself: Shortcuts' Open App does not list
+ *           installed web apps (tested on device 2026-09-09, see handoff.js). Safari is
+ *           the right target anyway, because that is where the app is used from.
+ *   'url'   Open URLs → `return_url` from the input. Lands on the exact page rather than
+ *           on whatever tab is frontmost, at the cost of navigating that tab, which
+ *           reloads it.
+ *   false   Neither. Back to `x-success` at the end of the run being the only return.
+ *
+ * `x-success` is sent regardless and still fires when the run completes, so the app is
+ * reached either way and this only decides whether it is reached early. That end-of-run
+ * reload is also what re-rolls every tile's random start offset, which is why 'app' not
+ * reloading costs nothing.
+ *
+ * Worth knowing before trusting any of this: what runs after the return is the fade-in,
+ * so a run iOS suspends in the background leaves system volume part way down with the
+ * music still playing.
  */
-const RETURN_EARLY = true;
+const RETURN_VIA = 'app';
 
 /** Seconds to wait after transferring to a device before retrying playback. */
 const DEVICE_TRANSFER_SETTLE_SECONDS = 0.5;
@@ -329,7 +343,24 @@ function httpRequest({ url, method, headers, json }) {
 }
 
 /**
- * Open URLs — the one action here that switches apps mid-run.
+ * Open App. `WFSelectedApp` is the modern shape; older shortcuts use a bare
+ * `WFAppIdentifier`, so both are written — an app that reads one ignores the other.
+ *
+ * A guess, like everything else that has not been lifted from a working shortcut. See
+ * the table in shortcut/README.md for what it looks like when it is wrong.
+ */
+function openApp(bundleId, name) {
+  const id = uuid();
+  act('is.workflow.actions.openapp', {
+    UUID: id,
+    WFAppIdentifier: bundleId,
+    WFSelectedApp: { BundleIdentifier: bundleId, Name: name },
+  });
+  return id;
+}
+
+/**
+ * Open URLs — the other way of switching apps mid-run.
  *
  * Shaped like every other consumer of a previous value: a `url` action above it, and an
  * explicit `WFInput` naming that action's output. That is the house rule (see prevRef),
@@ -483,15 +514,21 @@ setVariable('playResult');
 //    run behind it. The alternative is standing in Shortcuts for the whole transition —
 //    downMs + upMs plus request latency, which at a 2s fade is most of five seconds.
 //
-//    The URL comes from the input rather than being baked in here, so the same shortcut
-//    serves the dev server and the Pages build without knowing about either.
+//    In 'url' mode the address comes from the input rather than being baked in here, so
+//    the same shortcut serves the dev server and the Pages build without knowing about
+//    either. 'app' needs no address at all — Safari is already on the right tab.
 //
 //    `x-success` is still on the handoff URL and still fires when the run completes. That
 //    is deliberate belt-and-braces: if this action turns out not to switch apps, or the
 //    run is suspended before it, the transition still ends up back in the app exactly as
-//    it did before. The cost when both fire is a second reload of a tab already on
-//    screen, which is not an app switch and is not worth avoiding.
-if (RETURN_EARLY) {
+//    it did before. It is also the reload that re-rolls every tile's random offset, which
+//    the 'app' return deliberately does not do.
+if (RETURN_VIA === 'app') {
+  // Safari, not the web app: Open App does not list installed web apps, and the app is
+  // used from a Safari tab anyway. No reload, so the grid comes back exactly as it was.
+  comment('Back to the app now; the fade-in continues behind it');
+  openApp('com.apple.mobilesafari', 'Safari');
+} else if (RETURN_VIA === 'url') {
   comment('Back to the app now; the fade-in continues behind it');
   openUrl(tokenString(varRef('return_url')));
 }

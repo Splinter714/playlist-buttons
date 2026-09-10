@@ -68,6 +68,18 @@ describe('the generated shortcut takes shuffle from its input (#10)', () => {
     expect(plist).toMatch(/<key>VariableName<\/key>\s*<string>offset<\/string>/);
   });
 
+  it('returns to the app before the fade-in rather than at the end of the run', () => {
+    // x-success only fires when the whole run finishes, which is the wait this avoids.
+    // So there is an explicit switch-apps action, and it sits after the play call and
+    // before the fade-in ramp — the order is the whole point.
+    const openApp = plist.indexOf('is.workflow.actions.openapp');
+    const play = plist.indexOf('me/player/play');
+    const fadeIn = plist.lastIndexOf('is.workflow.actions.setvolume');
+    expect(openApp).toBeGreaterThan(play);
+    expect(openApp).toBeLessThan(fadeIn);
+    expect(plist).toContain('com.apple.mobilesafari');
+  });
+
   it('is a well-formed plist that `shortcuts sign` can take', () => {
     expect(plist.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(plist.trimEnd().endsWith('</plist>')).toBe(true);
