@@ -75,13 +75,13 @@ describe('the handoff URL (#4) — what a tile actually points at', () => {
     expect(raw).toContain('%2B'); // the token's `+`
   });
 
-  it('carries no x-success or x-error', () => {
-    // Sending the phone back to an https URL always opens Safari, even with the app
-    // installed to the Home Screen — iOS cannot target an installed web app by URL.
-    // With no callback, iOS returns to whatever launched the shortcut instead.
+  it('returns to the app on success and to the app with ?err=1 on failure', () => {
+    // Lands in Safari, deliberately: no callback strands you in Shortcuts, and every
+    // way of targeting an installed web app was tested and failed — see handoff.js.
     const q = query(href());
-    expect(q.get('x-success')).toBeNull();
-    expect(q.get('x-error')).toBeNull();
+    expect(q.get('x-success')).toBe(RETURN);
+    expect(q.get('x-error')).toBe(`${RETURN}?${ERROR_PARAM}=1`);
+    expect(href()).toContain(encodeURIComponent(RETURN));
   });
 
   it('defaults the return URL to the app itself, with no query and no hash', () => {

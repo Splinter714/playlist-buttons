@@ -96,25 +96,30 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
 }
 
 /**
- * Assemble the handoff URL. Every value is percent-encoded by URLSearchParams.
+ * Assemble the x-callback-url. Every value is percent-encoded by URLSearchParams.
  *
- * No `x-success` / `x-error`, deliberately. Sending the phone back to this app's https
- * URL always opens Safari, even when the app is installed to the Home Screen — iOS
- * offers no way to target an installed web app by URL. Without a callback, iOS's own
- * back behaviour returns to whatever launched the shortcut, which from the Home Screen
- * app is the app itself.
+ * `x-success` sends the phone back to this app's https URL, which lands in Safari. That
+ * is the ceiling, not an oversight — tested on device 2026-09-09:
  *
- * The reload x-success used to cause was never load-bearing by design; it was just what
- * happened. Two things leaned on it: the token, now handled by the refresh timer
- * repainting the grid, and re-rolling each tile's random offset, which currently still
- * wants a page load. If returning without a reload proves out, a repaint on
- * visibilitychange covers the offsets.
+ * - No callback at all: the shortcut finishes and you are left in Shortcuts. iOS does
+ *   not return to a Home Screen web app on its own.
+ * - Shortcuts' "Open App" action: does not list installed web apps.
+ * - iOS 26's `webapp://` scheme: iOS recognises it (prompts "open in Web?") and then
+ *   rejects the address, on every format tried — `webapp://host/path/`, the same with
+ *   no trailing slash, the full https URL percent-encoded, and `webapp:https://…`.
+ *   Matches a report that it stopped working after the iOS 26 beta.
+ *
+ * So the app is used from a Safari tab, and x-success returns to that tab — which the
+ * #4 spike showed works cleanly. The reload that causes is what re-rolls each tile's
+ * random offset.
  */
-export function buildHandoffUrl(payload) {
+export function buildHandoffUrl(payload, returnUrl = appReturnUrl()) {
   const params = new URLSearchParams({
     name: SHORTCUT_NAME,
     input: 'text',
     text: JSON.stringify(payload),
+    'x-success': returnUrl,
+    'x-error': `${returnUrl}?${ERROR_PARAM}=1`,
   });
   return `${HANDOFF_ENDPOINT}?${params}`;
 }
@@ -148,7 +153,7 @@ export function resolveTileLink(playlist, { token, returnUrl, fadeMs, random } =
   }
 
   const payload = buildHandoffPayload(playlist, { token: accessToken, fadeMs, random });
-  return { mode: 'handoff', href: buildHandoffUrl(payload), payload };
+  return { mode: 'handoff', href: buildHandoffUrl(payload, returnUrl ?? appReturnUrl()), payload };
 }
 
 /** Just the href — what most callers want. */
