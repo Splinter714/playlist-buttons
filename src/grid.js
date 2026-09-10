@@ -52,10 +52,8 @@ function buildTile(playlist, isNowPlaying, linkOptions) {
     a.append(img);
   }
 
-  // The scrim is its own element rather than a gradient on the label, so it can cover
-  // more of the art than the text does and fade out well above the first line. The
-  // name has to stay readable over arbitrary covers, light ones included.
-  a.append(el('span', 'tile-scrim'));
+  // The name carries its own solid pill (see grid.css), so nothing else is needed to
+  // keep it readable over arbitrary covers — light ones included.
   a.append(el('span', 'tile-name', playlist.name ?? ''));
 
   if (isNowPlaying) {

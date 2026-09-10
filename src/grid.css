@@ -58,15 +58,6 @@ body {
   display: block;
 }
 
-/* No scrim. Jackson, on playtest: the fade-to-dark over the bottom of the artwork
-   was the thing he disliked most about the tile. Legibility now comes from a pill
-   behind the name instead, which touches far less of the cover.
-   The element is still emitted by grid.js; hidden here rather than removed to avoid
-   editing that file mid-build. Remove the markup once #4's handoff work lands. */
-.tile-scrim {
-  display: none;
-}
-
 /* Centred pill along the bottom edge. It shrink-wraps the name rather than spanning
    the tile, so a short name covers very little art — and because the background is
    solid, it stays legible on a pure-white cover without needing a text shadow. */
