@@ -94,10 +94,14 @@ from here.
    not from here. It is `true` for an ordinary playlist and `false` for one
    marked "no shuffle" in settings, which also arrives with `offset: 0` (#10).
 5. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
-6. If that failed, `GET /v1/me/player/devices`, take the first device, and retry
-   the play call against it.
-7. If it still failed, restore volume to `V0`, show the error, and stop.
-8. Fade back in to `V0` over `upMs`.
+6. **Open URLs → `return_url`**, handing the phone straight back to the app now
+   that the playlist is playing, so the fade-in happens with the app on screen
+   instead of with Shortcuts on screen. Set `RETURN_EARLY = false` in
+   `build.mjs` to drop this action.
+7. Fade back in to `V0` over `upMs` — behind the app, if step 6 worked.
+
+There is no error recovery in the list, and that is not an omission — see
+"No error recovery" below.
 
 ### Two places this departs from the plan in issue #4
 
@@ -119,20 +123,46 @@ milliseconds. Behaviourally the same jump, and it avoids a numeric conditional
 whose plist shape I'd have been guessing at. If it turns out to be audible as a
 very fast ramp rather than an instant jump, that's the thing to fix.
 
-### Error handling is thin, on purpose
+### No error recovery
 
-Shortcuts has no try/catch. What it does have is that Get Contents of URL
-returns the response body without halting, and Spotify is well behaved here: a
-successful `PUT /me/player/play` returns **204 with an empty body**, while every
-failure returns a JSON body containing `"error"`. So the error branch is just a
-text check — *does the response contain "error"* — which uses only condition
-shapes I've confirmed against a real working shortcut.
+There used to be one: if the play call came back with a body containing
+`"error"`, look up a device and retry against it, and if that failed too,
+restore the volume and show the response. It is gone. Every shape tried for
+those two `If` actions rendered with a blank condition on device, across several
+rebuilds, and the working shortcut was reached by pulling them out by hand — so
+the generator stopped emitting them rather than regenerating something known
+broken.
 
-The cost is that it can't tell *which* error it got. "No active device" and
-"token expired" both take the same recovery path: pick a device, retry once,
-and if that fails too, restore the volume and show the raw response. For a
-token problem the alert will show Spotify's own message, which is enough to
-tell what happened.
+What that costs, should it be worth revisiting: nothing recovers when Spotify is
+not the active device (the play call fails and the music carries on unchanged),
+and a failed transition is silent — the fade dips and comes back with the same
+playlist still playing.
+
+Worth knowing if it is picked up again: the recovery only needed a conditional
+because it was a *retry*. Done unconditionally — always `GET
+/v1/me/player/devices`, always pass `?device_id=` on the play call — there is no
+`If` in it at all, and `?device_id=` transfers and plays in one request (below).
+
+### Returning to the app early
+
+`x-success` is Shortcuts' own mechanism and only fires when the run *finishes*,
+which is the whole duration of the transition — both ramps plus request latency.
+So the return is an explicit **Open URLs** action placed right after the play
+call, opening `return_url` from the input.
+
+`x-success` is still sent and still fires at the end. That is deliberate: if the
+Open URLs action does not switch apps on some iOS version, or the run is
+suspended before reaching it, the phone still lands back in the app exactly as it
+did before. When both fire, the second is a reload of a tab already on screen.
+
+**The failure mode to watch for on device.** What runs after the early return is
+the fade-in. A backgrounded Shortcuts run that iOS suspends part way through
+leaves system volume part way down, with the music playing quietly and nothing
+on screen saying so. Test it: transition, and check the volume comes all the way
+back — with the phone unlocked, with it locked, and with another app in front.
+Also try tapping a second tile mid-transition; the old behaviour made overlapping
+runs impossible by keeping the app off screen, and this removes that interlock.
+If the volume is unreliable, `RETURN_EARLY = false` puts it back.
 
 ## What I'm confident about vs. what's a guess
 
@@ -302,6 +332,7 @@ the dyld shared cache), so these four could not be verified locally:
 | 2 | `WFDeviceDetail: "Current Volume"` on Get Device Details | Action imports but the dropdown reads "Device Name" or similar; the fade jumps to a weird level or does nothing, because `V0` is text not a number | Open the action and pick Volume from its menu |
 | 3 | `is.workflow.actions.calculateexpression` with parameter `Input` | Broken placeholder where each ramp's calculation should be; the ramps do nothing | Retype the expression — it's `V0 × (20 − Repeat Index) ÷ 20` for the fade out and `V0 × Repeat Index ÷ 20` for the fade in, using whatever `STEPS` is set to |
 | 4 | `Repeat Index` as a magic variable, referenced as `{Type: "Variable", VariableName: "Repeat Index"}` | Ramps run but every step sets the same volume, so the fade is a single step | Re-pick the Repeat Index variable inside the calculation |
+| 5 | `is.workflow.actions.openurl` taking `WFInput` from a `url` action above it | The transition works but never returns to the app early — you sit in Shortcuts for the whole fade, exactly as before, and only `x-success` brings you back | Open the action and re-pick the URL, or set `RETURN_EARLY = false` and live with the app switch |
 
 Two smaller ones:
 

@@ -71,7 +71,7 @@ export function pickOffset(total, random = Math.random) {
  * @param {{uri: string, trackTotal?: number, nofadein?: boolean, inorder?: boolean}} playlist
  * @param {{token: string, fadeMs?: number, random?: () => number}} options
  */
-export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
+export function buildHandoffPayload(playlist, { token, fadeMs, random, returnUrl } = {}) {
   // `nofadein` is the one per-playlist fade setting (#6); resolveFade turns it into
   // `upMs: 0`, meaning restore to the captured volume instead of ramping.
   const { downMs, upMs } = resolveFade(playlist?.nofadein === true, fadeMs);
@@ -92,6 +92,16 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
     shuffle: inorder ? 'false' : 'true',
     downMs,
     upMs,
+    // Where the shortcut sends the phone back to, mid-run, as soon as the new playlist
+    // is playing — so the fade-in happens while the app is back on screen instead of
+    // while Shortcuts is. It is in the PAYLOAD as well as in `x-success` because the two
+    // are different mechanisms: `x-success` is Shortcuts' own, and only fires when the
+    // run finishes, which is the thing we are trying not to wait for. The shortcut opens
+    // this one itself, from an Open URLs action placed right after the play call.
+    //
+    // Sent from here rather than baked into the shortcut so one installed shortcut serves
+    // both the dev server and the Pages build.
+    return_url: returnUrl,
   };
 }
 
@@ -112,6 +122,14 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
  * So the app is used from a Safari tab, and x-success returns to that tab — which the
  * #4 spike showed works cleanly. The reload that causes is what re-rolls each tile's
  * random offset.
+ *
+ * `x-success` is KEPT even though the shortcut now also returns to the app by itself,
+ * partway through its run (`return_url` in the payload). They are not redundant: the
+ * shortcut's own Open URLs action fires as soon as the playlist is playing, which is the
+ * point of it, while x-success fires when the whole run — fade-in included — finishes.
+ * If the early return does not work on a given iOS version, x-success still lands the
+ * phone back here exactly as before. When both fire, the second is a reload of a tab
+ * already on screen rather than an app switch.
  */
 export function buildHandoffUrl(payload, returnUrl = appReturnUrl()) {
   const params = new URLSearchParams({
@@ -152,8 +170,9 @@ export function resolveTileLink(playlist, { token, returnUrl, fadeMs, random } =
     };
   }
 
-  const payload = buildHandoffPayload(playlist, { token: accessToken, fadeMs, random });
-  return { mode: 'handoff', href: buildHandoffUrl(payload, returnUrl ?? appReturnUrl()), payload };
+  const back = returnUrl ?? appReturnUrl();
+  const payload = buildHandoffPayload(playlist, { token: accessToken, fadeMs, random, returnUrl: back });
+  return { mode: 'handoff', href: buildHandoffUrl(payload, back), payload };
 }
 
 /** Just the href — what most callers want. */

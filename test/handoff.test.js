@@ -45,18 +45,27 @@ describe('the handoff URL (#4) — what a tile actually points at', () => {
     expect(q.get('input')).toBe('text');
   });
 
-  it('carries exactly the six contract fields the shortcut unpacks (#10 added shuffle)', () => {
+  it('carries exactly the seven contract fields the shortcut unpacks', () => {
     const payload = payloadOf(href());
     expect(Object.keys(payload).sort()).toEqual(
-      ['context_uri', 'downMs', 'offset', 'shuffle', 'token', 'upMs'],
+      ['context_uri', 'downMs', 'offset', 'return_url', 'shuffle', 'token', 'upMs'],
     );
   });
 
-  it('carries the same six fields for an in-order playlist — one contract, not two', () => {
+  it('carries the same seven fields for an in-order playlist — one contract, not two', () => {
     const payload = payloadOf(href({ ...tavern, inorder: true }));
     expect(Object.keys(payload).sort()).toEqual(
-      ['context_uri', 'downMs', 'offset', 'shuffle', 'token', 'upMs'],
+      ['context_uri', 'downMs', 'offset', 'return_url', 'shuffle', 'token', 'upMs'],
     );
+  });
+
+  it('tells the shortcut where to send the phone back to, matching x-success', () => {
+    // The shortcut opens this one itself, as soon as the playlist is playing, instead of
+    // waiting for x-success at the end of the run — so the fade-in happens with the app
+    // already back on screen. Both point at the same place.
+    const raw = href();
+    const params = new URLSearchParams(raw.slice(raw.indexOf('?') + 1));
+    expect(payloadOf(raw).return_url).toBe(params.get('x-success'));
   });
 
   it('passes the playlist URI and the token through untouched', () => {

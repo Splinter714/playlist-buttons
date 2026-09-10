@@ -23,6 +23,18 @@ import { fileURLToPath } from 'node:url';
 /** Number of volume steps in each ramp. More steps = smoother, more overhead. */
 const STEPS = 20;
 
+/**
+ * Hand the phone back to Safari as soon as the new playlist is playing, and let the
+ * fade-in finish behind it — rather than sitting in Shortcuts for the whole transition.
+ *
+ * Set false to go back to the old behaviour, where the ONLY return is `x-success` firing
+ * when the run completes. Worth knowing before trusting it: what runs after this point is
+ * the fade-in, so a run that iOS suspends in the background leaves system volume part way
+ * down with the music still playing. `x-success` is still sent, so the app is reached
+ * either way; this only decides whether it is reached early.
+ */
+const RETURN_EARLY = true;
+
 /** Seconds to wait after transferring to a device before retrying playback. */
 const DEVICE_TRANSFER_SETTLE_SECONDS = 0.5;
 
@@ -316,6 +328,24 @@ function httpRequest({ url, method, headers, json }) {
   return id;
 }
 
+/**
+ * Open URLs — the one action here that switches apps mid-run.
+ *
+ * Shaped like every other consumer of a previous value: a `url` action above it, and an
+ * explicit `WFInput` naming that action's output. That is the house rule (see prevRef),
+ * and the alternative — a bare `openurl` chaining implicitly off whatever sits above —
+ * is the shape that has silently done nothing everywhere else in this file.
+ *
+ * NOT the same shape as Get Contents of URL, which is the one action that must carry no
+ * input at all. Listed as a guess in shortcut/README.md with its symptom.
+ */
+function openUrl(url) {
+  urlAction(url);
+  const id = uuid();
+  act('is.workflow.actions.openurl', { UUID: id, WFInput: prevRef('URL') });
+  return id;
+}
+
 // Control flow. Each If / Repeat is a matched pair sharing a GroupingIdentifier;
 // WFControlFlowMode is 0 = start, 1 = otherwise, 2 = end.
 /**
@@ -407,10 +437,10 @@ comment(
 );
 
 // 1. Unpack the JSON the web app handed us.
-comment('Unpack input: token, context_uri, offset, shuffle, downMs, upMs');
+comment('Unpack input: token, context_uri, offset, shuffle, downMs, upMs, return_url');
 getDictionaryFromInput();
 setVariable('input');
-for (const key of ['token', 'context_uri', 'offset', 'shuffle', 'downMs', 'upMs']) {
+for (const key of ['token', 'context_uri', 'offset', 'shuffle', 'downMs', 'upMs', 'return_url']) {
   getVariable('input');
   getValueForKey(key);
   setVariable(key);
@@ -449,7 +479,24 @@ httpRequest({
 });
 setVariable('playResult');
 
-// 6. No error recovery, deliberately.
+// 6. Go back to Safari NOW, with the new playlist already playing, and let the fade-in
+//    run behind it. The alternative is standing in Shortcuts for the whole transition —
+//    downMs + upMs plus request latency, which at a 2s fade is most of five seconds.
+//
+//    The URL comes from the input rather than being baked in here, so the same shortcut
+//    serves the dev server and the Pages build without knowing about either.
+//
+//    `x-success` is still on the handoff URL and still fires when the run completes. That
+//    is deliberate belt-and-braces: if this action turns out not to switch apps, or the
+//    run is suspended before it, the transition still ends up back in the app exactly as
+//    it did before. The cost when both fire is a second reload of a tab already on
+//    screen, which is not an app switch and is not worth avoiding.
+if (RETURN_EARLY) {
+  comment('Back to the app now; the fade-in continues behind it');
+  openUrl(tokenString(varRef('return_url')));
+}
+
+// 7. No error recovery, deliberately.
 //
 //    There used to be a "if the play call returned an error, find a device and retry
 //    against it, otherwise restore the volume and say why" block here, built on two

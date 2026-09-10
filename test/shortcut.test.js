@@ -45,7 +45,7 @@ describe('the generated shortcut takes shuffle from its input (#10)', () => {
       .map((m) => m[1]);
     // `devices` and `id` belong to the no-active-device recovery path, not to the input.
     expect(keys.filter((k) => !['devices', 'id'].includes(k)))
-      .toEqual(['token', 'context_uri', 'offset', 'shuffle', 'downMs', 'upMs']);
+      .toEqual(['token', 'context_uri', 'offset', 'shuffle', 'downMs', 'upMs', 'return_url']);
   });
 
   it('no longer hardcodes shuffle on', () => {

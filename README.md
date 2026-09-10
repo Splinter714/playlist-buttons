@@ -50,8 +50,14 @@ web app  ──shortcuts://x-callback-url──▶  shortcut
                                           └─ ramp back up (or jump to full)
 ```
 
-One visible app switch per transition — Safari to Shortcuts and back via
-`x-success`. Audio continues throughout.
+One visible app switch per transition — Safari to Shortcuts and back. Audio
+continues throughout.
+
+The switch is as short as it can be made: the shortcut opens the app's own URL
+itself, in an Open URLs action placed right after the play call, so the phone is
+back in Safari as soon as the new playlist is playing and the fade-in finishes
+behind it. `x-success` is still sent and still fires when the run ends, as a
+backstop for the case where that action does not switch apps.
 
 ### Why the app switch can't be avoided
 
@@ -151,8 +157,13 @@ Receives JSON as input:
 
 ```json
 { "token": "...", "context_uri": "spotify:playlist:...", "offset": 47,
-  "shuffle": true, "downMs": 3000, "upMs": 3000 }
+  "shuffle": true, "downMs": 3000, "upMs": 3000,
+  "return_url": "https://splinter714.github.io/playlist-buttons/" }
 ```
+
+`return_url` is where the shortcut sends the phone back to, partway through its
+own run. It travels in the payload rather than being baked into the shortcut so
+one installed shortcut serves both the dev server and the Pages build.
 
 `shuffle` and `offset` are decided together: normally `true` with a random offset, and
 for an `inorder` playlist `false` with `offset: 0`.
