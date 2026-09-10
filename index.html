@@ -6,6 +6,15 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0c0c0e" />
     <title>playlist buttons</title>
+
+    <!-- Installable as a standalone Home Screen app. Without a manifest (or the Apple
+         meta below, for older iOS) "Add to Home Screen" makes a bookmark that opens in
+         Safari, and the shortcut's return trip lands in Safari too. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="playlist buttons" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   </head>
   <body>
     <!-- The only navigation there is: grid ⇄ settings (#5/#6/#8), on the URL hash so
