@@ -17,7 +17,7 @@ import { beginLogin, handleRedirect, isLoggedIn, logout, getAuth, startRefreshTi
 import { sessionScopesStale } from './scopes.js';
 import { readCache, hasCache, refreshPlaylists, clearCache, purgeLegacyStorage } from './playlists.js';
 import {
-  readRotation, joinRotation, buildCandidates,
+  readRotation, joinRotation, buildCandidates, reorderRotation,
   addToRotation, removeFromRotation, isInRotation, toggleNofadein, toggleInorder,
 } from './rotation.js';
 import {
@@ -45,6 +45,9 @@ const state = {
   // Set when this load is the return leg of a shortcut run that failed (#4). Read off
   // the URL once, on load, and shown on the grid until the next tap takes us away.
   notice: null,
+  // Edit mode (#3): drag to reorder, no tap-to-play, markers visible. Deliberately NOT
+  // persisted — a reload, and every transition is a reload, lands on a playable grid.
+  editing: false,
 };
 
 function setAppStatus(text = '', kind = '') {
@@ -109,11 +112,26 @@ function paintSettings() {
   });
 }
 
+/**
+ * A drop (#3). The DOM is already in the new order — the drag put it there — so this
+ * writes it through and updates our copy, but deliberately does NOT repaint: a repaint
+ * would rebuild the tiles under the user's thumb mid-rearrange. The next paint (leaving
+ * edit mode, or any reload) renders from the rotation, which is now the same order.
+ */
+function onReorder(ids) {
+  reorderRotation(ids);
+  state.items = joinRotation(readRotation(), readCache());
+  renderDebugPlaylists(state.items, state.candidateCount);
+}
+
 function paint() {
   const route = currentRoute();
   paintNav(route);
 
   if (route === 'settings') {
+    // Membership is settings' job and order is the grid's; leaving the grid leaves edit
+    // mode, so coming back is always a playable grid.
+    state.editing = false;
     paintSettings();
     return;
   }
@@ -130,6 +148,12 @@ function paint() {
       items: state.items,
       nowPlayingId: resolveNowPlaying(state.items, readNowPlaying()),
       notice: state.notice,
+      editing: state.editing,
+      onToggleEdit: (next) => {
+        state.editing = next;
+        paint();
+      },
+      onReorder,
     });
   } else if (view === 'skeleton') {
     renderSkeleton(appEl);
@@ -144,7 +168,10 @@ function paint() {
 function update(playlists) {
   if (playlists) state.candidateCount = playlists.length;
   state.items = joinRotation(readRotation(), playlists ?? readCache());
-  paint();
+  // Same rule as a drop: never rebuild the tiles while they are being dragged. A
+  // revalidation landing mid-rearrange would yank the tile out from under the finger.
+  // The list is up to date either way, and leaving edit mode paints it.
+  if (!state.editing) paint();
   renderDebugPlaylists(state.items, state.candidateCount);
 }
 
