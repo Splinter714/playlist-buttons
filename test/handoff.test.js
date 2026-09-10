@@ -59,13 +59,11 @@ describe('the handoff URL (#4) — what a tile actually points at', () => {
     );
   });
 
-  it('tells the shortcut where to send the phone back to, matching x-success', () => {
-    // The shortcut opens this one itself, as soon as the playlist is playing, instead of
-    // waiting for x-success at the end of the run — so the fade-in happens with the app
-    // already back on screen. Both point at the same place.
-    const raw = href();
-    const params = new URLSearchParams(raw.slice(raw.indexOf('?') + 1));
-    expect(payloadOf(raw).return_url).toBe(params.get('x-success'));
+  it('tells the shortcut where to send the phone back to', () => {
+    // Used by RETURN_VIA = 'url'; the default 'app' return needs no address, since it
+    // brings Safari forward on the tab it is already on. Sent either way so switching
+    // modes is one constant in the generator rather than a change on both sides.
+    expect(payloadOf(href()).return_url).toBe(RETURN);
   });
 
   it('passes the playlist URI and the token through untouched', () => {
@@ -84,13 +82,22 @@ describe('the handoff URL (#4) — what a tile actually points at', () => {
     expect(raw).toContain('%2B'); // the token's `+`
   });
 
-  it('returns to the app on success and to the app with ?err=1 on failure', () => {
-    // Lands in Safari, deliberately: no callback strands you in Shortcuts, and every
-    // way of targeting an installed web app was tested and failed — see handoff.js.
+  it('carries no callbacks at all', () => {
+    // On device, neither fires when the run ends: a backgrounded app cannot switch apps,
+    // so once the shortcut has put Safari in front the callback sits queued and goes off
+    // at the next unrelated moment Shortcuts is opened, yanking the phone to Safari. The
+    // shortcut returns to the app by itself now, so it needs neither. See handoff.js.
     const q = query(href());
-    expect(q.get('x-success')).toBe(RETURN);
-    expect(q.get('x-error')).toBe(`${RETURN}?${ERROR_PARAM}=1`);
-    expect(href()).toContain(encodeURIComponent(RETURN));
+    expect(q.get('x-success')).toBe(null);
+    expect(q.get('x-error')).toBe(null);
+    expect(q.get('name')).toBe(SHORTCUT_NAME);
+  });
+
+  it('keeps the x-callback-url endpoint even with nothing calling back', () => {
+    // That exact URL shape is what reaches Shortcuts without an "Open in Shortcuts?"
+    // prompt (#4). Trimming it to plain `shortcuts://run-shortcut` would be an untested
+    // change to the one thing here that must not regress.
+    expect(href().startsWith(`${HANDOFF_ENDPOINT}?`)).toBe(true);
   });
 
   it('defaults the return URL to the app itself, with no query and no hash', () => {

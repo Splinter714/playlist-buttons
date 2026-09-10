@@ -3,9 +3,13 @@
 //   shortcuts://x-callback-url/run-shortcut
 //     ?name=PlaylistButtons
 //     &input=text
-//     &text=<urlencoded {token, context_uri, offset, shuffle, downMs, upMs}>
-//     &x-success=<urlencoded app URL>
-//     &x-error=<urlencoded app URL + ?err=1>
+//     &text=<urlencoded {token, context_uri, offset, shuffle, downMs, upMs, return_url}>
+//
+// NO `x-success` and no `x-error` — see buildHandoffUrl. The endpoint is still the
+// x-callback-url one even with no callbacks on it, because that exact URL shape is what
+// #4's spike proved reaches Shortcuts without an "Open in Shortcuts?" prompt, and
+// changing it to plain `shortcuts://run-shortcut` would be an untested change to the one
+// thing in this file that must not regress.
 //
 // Three things here are findings from #4's on-device spike, not style preferences:
 //
@@ -38,14 +42,22 @@ import { resolveFade } from './settings.js';
 export const SHORTCUT_NAME = 'PlaylistButtons';
 export const HANDOFF_ENDPOINT = 'shortcuts://x-callback-url/run-shortcut';
 
-/** What `x-error` puts on the return URL, so the grid can say the transition failed. */
+/**
+ * The parameter `consumeHandoffError` looks for. Nothing sets it any more — `x-error` was
+ * dropped with `x-success` (see buildHandoffUrl) — but reading it stays correct, and it is
+ * what error reporting gets rebuilt on if the shortcut ever learns to report one in time.
+ */
 export const ERROR_PARAM = 'err';
 
 /**
- * Where `x-success` / `x-error` send the phone back to: this app, with no query and no
- * hash. Dropping the hash matters — the return trip should land on the grid, not on
- * whatever screen happened to be open — and dropping the query stops `?err=1` from
- * accumulating across transitions.
+ * Where the shortcut sends the phone back to in `RETURN_VIA = 'url'` mode: this app, with
+ * no query and no hash. Dropping the hash matters — the return trip should land on the
+ * grid, not on whatever screen happened to be open — and dropping the query stops a stale
+ * parameter from accumulating across transitions.
+ *
+ * Unused by the default `'app'` return, which brings Safari forward on the tab it is
+ * already on and needs no address at all. It is still sent, so switching modes is one
+ * constant in the generator rather than a change on both sides.
  */
 export function appReturnUrl(loc = globalThis.location) {
   return `${loc?.origin ?? ''}${loc?.pathname ?? '/'}`;
@@ -110,42 +122,40 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random, returnUrl
 }
 
 /**
- * Assemble the x-callback-url. Every value is percent-encoded by URLSearchParams.
+ * Assemble the handoff URL. Every value is percent-encoded by URLSearchParams.
  *
- * `x-success` sends the phone back to this app's https URL, which lands in Safari. That
- * is the ceiling, not an oversight — tested on device 2026-09-09:
+ * NO CALLBACKS. The shortcut returns to the app itself, with an Open App action fired as
+ * soon as the playlist is playing (`RETURN_VIA` in shortcut/build.mjs), so it does not
+ * need one — and on device the callbacks were actively harmful.
  *
- * - No callback at all: the shortcut finishes and you are left in Shortcuts. iOS does
- *   not return to a Home Screen web app on its own.
- * - Shortcuts' "Open App" action: does not list installed web apps.
- * - iOS 26's `webapp://` scheme: iOS recognises it (prompts "open in Web?") and then
- *   rejects the address, on every format tried — `webapp://host/path/`, the same with
- *   no trailing slash, the full https URL percent-encoded, and `webapp:https://…`.
- *   Matches a report that it stopped working after the iOS 26 beta.
+ * What was found, in order:
  *
- * So the app is used from a Safari tab, and x-success returns to that tab — which the
- * #4 spike showed works cleanly. The reload that causes is what re-rolls each tile's
- * random offset.
+ * - `x-success` does not fire when the run ends. A backgrounded app cannot switch apps,
+ *   so once the shortcut has put Safari in front the callback sits QUEUED. It then fires
+ *   at the next unrelated moment Shortcuts is opened by hand, yanking the phone to Safari
+ *   out of nowhere. The run itself is not suspended — the fade-in completes normally —
+ *   it is only the app switch that waits.
+ * - `x-error` is the same mechanism and so has the same problem, with a worse payload: a
+ *   `?err=1` arriving hours late would put "that did not play" on the grid about a
+ *   transition long finished. It cannot do its job either way, since a callback that
+ *   fires whenever Shortcuts is next opened cannot report anything in time to matter.
  *
- * `x-success` is KEPT even though the shortcut now returns to the app by itself, partway
- * through its run — but NOT as the backstop it was first assumed to be. On device it does
- * not fire when the run ends: a backgrounded app cannot switch apps, so once the
- * shortcut's own Open App action has put Safari in front, the callback waits for
- * Shortcuts to be foregrounded by hand.
+ * So both are gone. Nothing is lost that was working: with no error branch left in the
+ * shortcut (see shortcut/README.md) a failed transition was already silent.
  *
- * What it is still worth: it is the ONLY return if the early action does not switch apps
- * at all on some iOS version, which is the case it now covers. Nothing else may depend on
- * it — the offset re-roll that used to ride on its reload is a `visibilitychange` repaint
- * in main.js now, and `?err=1` from `x-error` reports on the same delay, so a failed
- * transition is effectively silent until Shortcuts is opened.
+ * `consumeHandoffError` and `?err=1` handling stay. They are correct defensive URL
+ * handling, they are what error reporting will be rebuilt on when the shortcut can report
+ * one in time, and nothing currently puts that parameter on the URL.
+ *
+ * Dropping the callbacks was tried once before and reverted (f42a820, then 647e481),
+ * because with no callback the shortcut finished and left you standing in Shortcuts. That
+ * reason is gone: the shortcut now returns by itself.
  */
-export function buildHandoffUrl(payload, returnUrl = appReturnUrl()) {
+export function buildHandoffUrl(payload) {
   const params = new URLSearchParams({
     name: SHORTCUT_NAME,
     input: 'text',
     text: JSON.stringify(payload),
-    'x-success': returnUrl,
-    'x-error': `${returnUrl}?${ERROR_PARAM}=1`,
   });
   return `${HANDOFF_ENDPOINT}?${params}`;
 }
@@ -178,9 +188,10 @@ export function resolveTileLink(playlist, { token, returnUrl, fadeMs, random } =
     };
   }
 
-  const back = returnUrl ?? appReturnUrl();
-  const payload = buildHandoffPayload(playlist, { token: accessToken, fadeMs, random, returnUrl: back });
-  return { mode: 'handoff', href: buildHandoffUrl(payload, back), payload };
+  const payload = buildHandoffPayload(playlist, {
+    token: accessToken, fadeMs, random, returnUrl: returnUrl ?? appReturnUrl(),
+  });
+  return { mode: 'handoff', href: buildHandoffUrl(payload), payload };
 }
 
 /** Just the href — what most callers want. */
@@ -189,7 +200,7 @@ export function buildTileHref(playlist, options) {
 }
 
 /**
- * Read and clear the `?err=1` the shortcut's `x-error` sends back.
+ * Read and clear a `?err=1` on the URL.
  *
  * Clearing it matters: the return URL is the app's own URL, so a later reload of that
  * same address would otherwise re-announce a failure that already happened. Any other

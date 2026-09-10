@@ -168,9 +168,9 @@ async function main() {
   initDebugToggle();
   purgeLegacyStorage();
 
-  // `x-error` sends the phone back here with `?err=1`. Read it and strip it before
-  // anything else touches the URL, so a later reload of this same address does not
-  // re-announce a failure that already happened.
+  // A `?err=1` on the URL. Nothing puts one there at the moment — `x-error` went with
+  // `x-success` (see handoff.js) — but reading and stripping it before anything else
+  // touches the URL stays correct, and is what error reporting gets rebuilt on.
   if (consumeHandoffError()) {
     state.notice = HANDOFF_ERROR_TEXT;
     setDebugStatus('returned from the shortcut with ?err=1 — the transition failed', 'error');
@@ -186,12 +186,13 @@ async function main() {
   // Coming back from the shortcut (#4). This used to be a page LOAD — `x-success`
   // navigated here when the run finished — and that reload was what re-rolled every
   // tile's random start offset and refreshed every handoff href against the current
-  // token. Neither is true any more.
+  // token.
   //
-  // The shortcut now hands the phone back itself, with an Open App action fired as soon
-  // as the playlist is playing, and a backgrounded app cannot switch apps — so
-  // `x-success` does not fire when the run ends. It waits until Shortcuts is next in the
-  // foreground, which on a normal evening is never. Confirmed on device.
+  // There is no callback any more. The shortcut hands the phone back itself, with an Open
+  // App action fired as soon as the playlist is playing, and a backgrounded app cannot
+  // switch apps — so a callback could only sit queued until Shortcuts was next opened by
+  // hand, at which point it fired and yanked the phone to Safari out of nowhere. Both are
+  // gone (handoff.js).
   //
   // So the repaint the reload used to do happens here instead, every time the page comes
   // back to the front. Cheap: a render off state we already hold, no network.

@@ -59,13 +59,21 @@ new playlist is playing and the fade-in finishes behind it. Safari, not the web
 app — Shortcuts' Open App does not list installed web apps, and the app is used
 from a Safari tab for the same reason.
 
-`x-success` is still sent, but it is **not** the backstop it looks like. Tested on
-device: it does not fire when the run ends. A backgrounded app cannot switch apps,
-so once the shortcut has put Safari in front, the callback waits for Shortcuts to
-be opened by hand. It therefore covers exactly one case — an iOS version where the
-Open App action does not switch apps at all — and nothing may be built on it. In
-particular the app no longer gets a page load per transition, which is what the
-offset re-roll used to ride on (see Shuffle, below).
+There is **no `x-success` and no `x-error`**. Both were tried and removed on the
+evidence: a backgrounded app cannot switch apps, so once the shortcut had put Safari
+in front the callback sat queued and then fired at the next unrelated moment
+Shortcuts was opened by hand, yanking the phone to Safari out of nowhere. The run
+itself is not suspended — the fade-in completes normally — it is only the app
+switch that waits, which makes a callback useless for reporting anything in time
+and annoying the rest of the time.
+
+Nothing is lost that worked: with no error branch left in the shortcut, a failed
+transition was already silent. The app does lose its page load per transition,
+which is what the offset re-roll used to ride on — see Shuffle, below.
+
+Dropping the callbacks was tried once before and reverted, because with no callback
+the shortcut finished and left you standing in Shortcuts. That reason is gone now
+that the shortcut returns by itself.
 
 ### Why the app switch can't be avoided
 
@@ -151,8 +159,8 @@ full volume instead of ramping (`upMs: 0`).
 By default a playlist starts shuffled from a random track. The offset is re-rolled every
 time a tile's href is built, which is every render — originally once per transition,
 because every transition ended in a page load. That reload is gone: the shortcut returns
-to the app mid-run and `x-success` never fires while Shortcuts is in the background, so
-the app repaints on `visibilitychange` instead. Same effect, no page load: coming back
+to the app mid-run and there is no callback to reload it, so the app repaints on
+`visibilitychange` instead. Same effect, no page load: coming back
 from a transition re-rolls every tile. A playlist can instead be marked
 `inorder` on the settings screen — the **no shuffle** pill — which starts it at track 1
 with shuffle off, the same way every time (#10). It's a second, independent pill beside
