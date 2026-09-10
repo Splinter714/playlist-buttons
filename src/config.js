@@ -42,12 +42,11 @@ export const REMOVED_SCOPES = [
 // exactly that name, every tile on the grid is a link to nowhere — so the app has to be
 // able to point at it rather than assuming whoever is holding the phone already knows.
 //
-// This points at the generator and its install instructions, which is what exists today:
-// the shortcut is BUILT from shortcut/build.mjs and signed locally, and `dist/` is
-// gitignored, so there is no hosted file to link to. If the signed shortcut is ever
-// shared from the Shortcuts app, that produces an https://www.icloud.com/shortcuts/…
-// link that installs in one tap — swap it in here and nothing else needs to change.
-export const SHORTCUT_URL = 'https://github.com/Splinter714/playlist-buttons/tree/main/shortcut';
+// An iCloud share link, so it installs in one tap. It is a SIGNED SNAPSHOT of the
+// shortcut as it was when it was shared, not a live view of shortcut/build.mjs: rebuild
+// the shortcut and this link still hands out the old one until it is re-shared from the
+// Shortcuts app and the new URL put here.
+export const SHORTCUT_URL = 'https://www.icloud.com/shortcuts/1d4a520ced5743e38562607289ed7c14';
 
 export const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';
 export const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';

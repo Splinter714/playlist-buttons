@@ -39,6 +39,15 @@ Two things about that command are load-bearing:
 
 ## Install it on the phone
 
+The web app's settings screen links to a shared copy, which installs in one tap:
+<https://www.icloud.com/shortcuts/1d4a520ced5743e38562607289ed7c14>. That link is
+a **signed snapshot** of the shortcut as it was when it was shared — it does not
+track this generator. After changing `build.mjs`, rebuild, re-share from the
+Shortcuts app, and put the new URL in `SHORTCUT_URL` (`src/config.js`), or the
+app will keep handing people the old shortcut.
+
+To build and install it yourself:
+
 1. `npm run shortcut:sign`
 2. `open shortcut/dist/signed/PlaylistButtons.shortcut` — Shortcuts launches and
    offers to add it.

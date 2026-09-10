@@ -53,6 +53,22 @@ web app  ──shortcuts://x-callback-url──▶  shortcut
 One visible app switch per transition — Safari to Shortcuts and back via
 `x-success`. Audio continues throughout.
 
+### Why the app switch can't be avoided
+
+Asked and checked rather than assumed: there is no way to run a shortcut in the
+background from a web page. `shortcuts://run-shortcut` and its `x-callback-url`
+form both foreground the Shortcuts app by design, and Apple ships no background
+variant — the open feedback request asking for a `shortcuts-background://` scheme
+([FB11516273](https://github.com/feedback-assistant/reports/issues/356)) is still
+a request. The ways a shortcut *does* run without a visible switch — personal
+automations, widgets, the Action Button, Control Center, Siri — are all triggered
+by the system or by a direct tap on that control, and none of them can be fired
+from a page in Safari.
+
+So the switch is not a rough edge to file down; it is the price of the only API
+that can set iOS system volume from outside a native app. The thing that would
+remove it is a native app, ruled out above on cost.
+
 ## Membership and ordering
 
 Which playlists are in the rotation, what order they sit in, which skip the fade-in and
