@@ -202,13 +202,22 @@ field in it was already correct, because of a key that shouldn't have been there
 `WFCondition` is omitted, which defaults to "contains" for text. Do not "fix" any of
 this by adding an input or a UUID.
 
-**Get Contents of URL is the exception to the rule above.** It does not take a
-reference to a preceding action — it carries its own URL. An earlier version emitted a
-separate `url` action and pointed `WFURL` at that action's output, which gave
-"No URL Specified" on device. `WFURL` now holds the URL directly: a plain string, or a
-token string where a variable is interpolated. That is the shape the action has when
-you type a URL straight into it in the editor, and it removes four actions along with
-the chaining question.
+**Get Contents of URL is the exception to the rule above.** It takes its URL from a
+`url` action immediately above it, and carries **no `WFURL` of its own** — that is how
+all six requests in the reference shortcut are shaped. Two other forms were tried and
+both failed on device:
+
+| Shape | Result |
+| --- | --- |
+| `WFURL` pointing at the url action's output | "No URL Specified" |
+| `WFURL` holding the URL inline, no url action | Displayed the URL correctly, but the request never fired — playback simply did not change, with no error |
+
+The second is the dangerous one: it *looks* right when you open the shortcut. Jackson
+caught it by noticing playback stopped changing and tracing it back to when the URL
+handling changed.
+
+`WFHTTPBodyType` is not set anywhere. In the reference it appears only on a Form body;
+a JSON request carries `WFJSONValues` and nothing else.
 
 `End If` and `Otherwise` markers take no input, and Repeat's control-flow entries take
 none either. Anything added to this generator later that reads a prior value needs the

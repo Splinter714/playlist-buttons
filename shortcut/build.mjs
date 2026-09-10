@@ -282,17 +282,33 @@ const stopShortcut = () => act('is.workflow.actions.exit');
  * WFJSONValues present means a JSON body — both match a known-good shortcut.
  */
 /**
- * Get Contents of URL, holding its own URL.
+ * A URL action, whose output the request below it consumes.
  *
- * An earlier version emitted a separate `url` action and pointed WFURL at its output,
- * which gave "No URL Specified" on device. This is the shape the action has when you
- * type a URL straight into it in the editor: WFURL carries the URL itself — a plain
- * string, or a token string where a variable is interpolated. No second action, and
- * nothing to chain.
+ * `WFURLActionURL` takes a plain string, or a token string where a variable is
+ * interpolated.
+ */
+function urlAction(url) {
+  const id = uuid();
+  act('is.workflow.actions.url', { UUID: id, WFURLActionURL: url });
+  return id;
+}
+
+/**
+ * Get Contents of URL, taking its URL from the `url` action immediately above it.
+ *
+ * Copied from the working reference shortcut, where all six requests are shaped this
+ * way and NONE carries a `WFURL`. Two other shapes were tried and both failed on
+ * device: pointing `WFURL` at the url action's output gave "No URL Specified", and
+ * putting the URL inline in `WFURL` displayed correctly but never fired the request —
+ * playback simply did not change, with no error.
+ *
+ * Note `WFHTTPBodyType` is not set. In the reference it appears only on a Form body;
+ * a JSON request carries `WFJSONValues` and nothing else.
  */
 function httpRequest({ url, method, headers, json }) {
+  urlAction(url);
   const id = uuid();
-  const params = { Advanced: true, ShowHeaders: true, UUID: id, WFURL: url };
+  const params = { Advanced: true, ShowHeaders: true, UUID: id };
   if (method && method !== 'GET') params.WFHTTPMethod = method;
   if (headers) params.WFHTTPHeaders = dictField(headers);
   if (json) params.WFJSONValues = dictField(json);
@@ -319,7 +335,12 @@ function ifContains(substring) {
   const group = uuid();
   act(
     'is.workflow.actions.conditional',
-    { GroupingIdentifier: group, WFConditionalActionString: substring, WFControlFlowMode: 0 },
+    {
+      GroupingIdentifier: group,
+      WFCondition: 'Contains',
+      WFConditionalActionString: substring,
+      WFControlFlowMode: 0,
+    },
     { noUUID: true },
   );
   return group;
