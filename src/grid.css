@@ -2,7 +2,7 @@
    degrade to. Dark by default because this gets used in a dim room at a table.
 
    Restrained on purpose: the cover art is the content, so the chrome is a background
-   colour, a scrim and a marker, and nothing else. First pass, for Jackson to direct. */
+   colour, a name pill and a marker, and nothing else. */
 
 :root {
   --bg: #0c0c0e;
@@ -58,34 +58,33 @@ body {
   display: block;
 }
 
-/* The scrim, not the label, is what makes the name readable. It reaches well above the
-   text and fades out completely, so a busy or near-white cover still gives dark pixels
-   directly behind every glyph without the tile looking like it has a black bar on it. */
+/* No scrim. Jackson, on playtest: the fade-to-dark over the bottom of the artwork
+   was the thing he disliked most about the tile. Legibility now comes from a pill
+   behind the name instead, which touches far less of the cover.
+   The element is still emitted by grid.js; hidden here rather than removed to avoid
+   editing that file mid-build. Remove the markup once #4's handoff work lands. */
 .tile-scrim {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 62%;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.88) 0%,
-    rgba(0, 0, 0, 0.72) 34%,
-    rgba(0, 0, 0, 0.34) 66%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  pointer-events: none;
+  display: none;
 }
 
+/* Centred pill along the bottom edge. It shrink-wraps the name rather than spanning
+   the tile, so a short name covers very little art — and because the background is
+   solid, it stays legible on a pure-white cover without needing a text shadow. */
 .tile-name {
   position: absolute;
-  left: 6px;
-  right: 6px;
   bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 10px);
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
   color: #fff;
   font-size: 11.5px;
-  line-height: 1.2;
+  line-height: 1.25;
   font-weight: 600;
+  text-align: center;
   /* Long names get two lines and then an ellipsis — never a name that pushes itself
      off the artwork or reflows the tile. */
   display: -webkit-box;
@@ -93,8 +92,6 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
-  /* Belt and braces for the worst case: a white cover behind a thin glyph. */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 /* Now playing: a ring plus a dot. Two cues, because a ring alone is easy to miss at a
