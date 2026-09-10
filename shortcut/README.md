@@ -143,7 +143,7 @@ which happens to make the same `PUT /me/player/play` call with a
 | --- | --- | --- |
 | Get Dictionary from Input | `detect.dictionary` | — |
 | Get Value for Key | `getvalueforkey` | `WFDictionaryKey` |
-| Set / Get / Append Variable | `setvariable`, `getvariable`, `appendvariable` | `WFVariableName`, `WFVariable` |
+| Set / Get / Append Variable | `setvariable`, `getvariable`, `appendvariable` | `WFVariableName` **plus `WFInput`** (see below), `WFVariable` |
 | Get Contents of URL | `downloadurl` | `WFHTTPMethod`, `WFHTTPHeaders`, `WFJSONValues`, `Advanced`, `ShowHeaders` |
 | URL | `url` | `WFURLActionURL` |
 | If / Otherwise / End If | `conditional` | `WFCondition`, `WFConditionalActionString`, `WFControlFlowMode`, `GroupingIdentifier` |
@@ -162,6 +162,42 @@ convention that 0 / 1 / 2 mean start / otherwise / end.
 
 `repeat.count` as an identifier is confirmed separately, out of the Shortcuts
 app binary.
+
+### Verified on device, 2026-09-09
+
+Three of these were settled by running probe shortcuts on the Mac and reading their
+output back, rather than reasoning about them.
+
+**`Set Variable` needs an explicit `WFInput`.** This was a real bug, not a guess that
+happened to be wrong. Emitting `setvariable` with only `WFVariableName` produces an
+action that silently stores *nothing* — every later reference to that variable comes
+back empty. A probe comparing the two forms returned `B=[]` for a variable set
+without `WFInput` and `C=[8]` for the same variable set with it. Since the first
+thing the shortcut does is unpack six values into variables, everything downstream
+was empty, and the first calculation died on `"" / 12 / 1000` — surfacing as a bare
+"Math error" dialog with no indication of which action failed.
+
+`build.mjs` now tracks the previously emitted action's UUID and points each
+`Set Variable` at it.
+
+**Guess 2 retired — `WFDeviceDetail: "Current Volume"` is correct.** A probe returned
+`0.1875` with the Mac at 19%, so it works and returns a 0–1 fraction, which is what
+the ramp arithmetic assumes.
+
+**Guess 3 retired — `calculateexpression` with `Input` is correct.** A probe
+calculating `2 + 2` returned `4`.
+
+### `shortcuts run` cannot test any of this end to end
+
+`shortcuts run --input-path <file>` does **not** deliver input to
+`Get Dictionary from Input`. A probe returned identical empty results with a `.json`
+file, a `.txt` file, and no input at all. So running this shortcut from the command
+line always fails with "Math error" regardless of whether it is correct — the CLI is
+useful for probing actions that do not read input, and useless for validating the
+real path.
+
+The only real test is tapping a tile in the web app, where the
+`shortcuts://…&input=text&text=…` URL delivers the payload properly.
 
 ### Guesses — check these first if the import misbehaves
 
