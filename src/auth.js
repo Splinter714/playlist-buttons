@@ -190,8 +190,18 @@ export async function refreshIfNeeded() {
  * Background freshness. Runs once immediately and then on an interval, so a token is
  * always already fresh by the time a button is tapped.
  */
-export function startRefreshTimer(onError = () => {}) {
-  const tick = () => { refreshIfNeeded().catch(onError); };
+export function startRefreshTimer(onError = () => {}, onRefreshed = () => {}) {
+  const tick = () => {
+    const before = getAuth()?.access_token;
+    refreshIfNeeded()
+      .then((auth) => {
+        // Only when the token actually changed. Every tile's href embeds the token at
+        // render time, so a silent refresh leaves the grid holding a dead one and the
+        // next tap 401s — invisible until the page has sat open for an hour.
+        if (auth?.access_token && auth.access_token !== before) onRefreshed(auth);
+      })
+      .catch(onError);
+  };
   tick();
   const id = setInterval(tick, REFRESH_CHECK_INTERVAL_MS);
   // Coming back from the Shortcuts app is a fresh page load, but cover the case where

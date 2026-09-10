@@ -222,10 +222,19 @@ async function main() {
     return;
   }
 
-  startRefreshTimer((e) => {
-    setAppStatus(`token refresh failed: ${e.message}`, 'error');
-    setDebugStatus(`token refresh failed: ${e.message}`, 'error');
-  });
+  startRefreshTimer(
+    (e) => {
+      setAppStatus(`token refresh failed: ${e.message}`, 'error');
+      setDebugStatus(`token refresh failed: ${e.message}`, 'error');
+    },
+    () => {
+      // Repaint so every tile's handoff href picks up the new token. Skipped while
+      // rearranging: a re-render mid-drag would yank the tile out from under the finger,
+      // and leaving edit mode repaints anyway.
+      renderDebugAuth();
+      if (!state.editing) paint();
+    },
+  );
 
   // Paint from cache first, always. Never block on the network.
   state.cachePresent = hasCache();
