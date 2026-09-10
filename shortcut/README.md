@@ -8,6 +8,34 @@ This directory generates that shortcut from source, so tuning the fade means
 editing a number in `build.mjs` and rebuilding — not dragging 70 actions around
 on a phone screen.
 
+## Reading the shape out of a shortcut that works
+
+Every plist shape in `build.mjs` that was reasoned about rather than copied has been
+wrong, and each wrong one cost a rebuild-import-test cycle on a phone. The ones that
+work were lifted verbatim from a shortcut that works. This is the tool for lifting:
+
+```sh
+npm run shortcut:inspect -- ~/path/to/YourWorking.shortcut
+```
+
+It reads both that file and `dist/PlaylistButtons.shortcut`, and prints — per action
+type — which parameter keys yours carries that the generated one does not, and vice
+versa. That difference is the fix, arrived at from evidence instead of another theory.
+
+Add action names to dump those actions in full, for when the keys match but a value is
+shaped wrong inside — which is how an action can look right in the editor and still do
+nothing:
+
+```sh
+npm run shortcut:inspect -- ~/path/to/YourWorking.shortcut downloadurl url
+```
+
+Binary and XML plists both work. It uses `plutil` where it exists and falls back to
+python3's `plistlib`, so it behaves the same on the Mac and on a Linux box.
+
+Point it at the shortcut you have **fixed by hand**, not at one exported from this
+generator — the whole point is the difference between the two.
+
 ## Build
 
 ```sh
@@ -281,6 +309,13 @@ both failed on device:
 The second is the dangerous one: it *looks* right when you open the shortcut. Jackson
 caught it by noticing playback stopped changing and tracing it back to when the URL
 handling changed.
+
+> **UNRESOLVED.** The third shape — the one generated now — does not import with its
+> URLs linked either, and the shortcut in use is a hand-fixed one. So all three shapes
+> tried so far are wrong, and the reference this one was copied from was a different
+> Spotify shortcut rather than a working PlaylistButtons. Do not try a fourth from
+> reasoning; read the right shape out of the hand-fixed one with `shortcut:inspect`
+> (below) and copy it.
 
 `WFHTTPBodyType` is not set anywhere. In the reference it appears only on a Form body;
 a JSON request carries `WFJSONValues` and nothing else.
