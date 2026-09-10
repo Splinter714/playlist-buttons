@@ -4,7 +4,10 @@
 //
 //   npm run shortcut:build
 //   shortcuts sign --mode anyone -i shortcut/dist/PlaylistButtons.shortcut \
-//                                -o shortcut/dist/PlaylistButtons.signed.shortcut
+//                                -o shortcut/dist/signed/PlaylistButtons.shortcut
+//   The signed file must be named PlaylistButtons.shortcut exactly — the imported
+//   shortcut takes its name from the filename, and the app's URL asks for
+//   name=PlaylistButtons. Use `npm run shortcut:sign`, which gets this right.
 //
 // See shortcut/README.md for install steps and for which action identifiers
 // here are confirmed against a real shortcut vs. which are educated guesses.
@@ -436,5 +439,5 @@ console.log(`Wrote ${out}`);
 console.log(`  ${actions.length} actions, ${STEPS} steps per ramp`);
 console.log('\nNext:');
 console.log(
-  `  shortcuts sign --mode anyone -i ${out} -o ${resolve(here, 'dist', 'PlaylistButtons.signed.shortcut')}`
+  '  npm run shortcut:sign   # signs to dist/signed/PlaylistButtons.shortcut, correctly named'
 );

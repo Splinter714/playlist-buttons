@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "shortcut:build": "node shortcut/build.mjs"
+    "shortcut:build": "node shortcut/build.mjs",
+    "shortcut:sign": "npm run shortcut:build && mkdir -p shortcut/dist/signed && shortcuts sign --mode anyone -i shortcut/dist/PlaylistButtons.shortcut -o shortcut/dist/signed/PlaylistButtons.shortcut"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",

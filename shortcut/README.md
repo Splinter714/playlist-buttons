@@ -20,24 +20,32 @@ Writes `shortcut/dist/PlaylistButtons.shortcut` — an unsigned, old-format plis
 Then sign it:
 
 ```sh
-shortcuts sign --mode anyone \
-  -i shortcut/dist/PlaylistButtons.shortcut \
-  -o shortcut/dist/PlaylistButtons.signed.shortcut
+npm run shortcut:sign
 ```
 
-`--mode anyone` matters. The default, `people-who-know-me`, produces a file only
-your own contacts can open.
+That builds and signs in one step, writing
+`shortcut/dist/signed/PlaylistButtons.shortcut`.
+
+Two things about that command are load-bearing:
+
+- **`--mode anyone`.** The default, `people-who-know-me`, produces a file only
+  your own contacts can open.
+- **The signed file goes in its own directory rather than getting a suffix.**
+  The imported shortcut is named after the *filename*, so signing to
+  `PlaylistButtons.signed.shortcut` imports a shortcut called
+  `PlaylistButtons.signed` — which does not match the `name=PlaylistButtons` in
+  the app's URL, and the handoff silently does nothing. An earlier version of
+  these instructions had exactly that bug.
 
 ## Install it on the phone
 
-1. `npm run shortcut:build`, then run the `shortcuts sign` command above.
-2. Open the signed file on the Mac: `open shortcut/dist/PlaylistButtons.signed.shortcut`.
-   Shortcuts launches and offers to add it.
-3. **Rename it to exactly `PlaylistButtons`** if it didn't come in that way. The
-   name is what the app's `shortcuts://x-callback-url/run-shortcut?name=…` URL
-   asks for, and it comes from the *filename*, not from anything inside the
-   plist — so a stray " 1" suffix from a re-import will silently break the
-   handoff. Check for that every time you reinstall.
+1. `npm run shortcut:sign`
+2. `open shortcut/dist/signed/PlaylistButtons.shortcut` — Shortcuts launches and
+   offers to add it.
+3. **Check the name is exactly `PlaylistButtons`.** Beyond the suffix problem
+   above, a re-import over an existing one can land as `PlaylistButtons 1`.
+   Either way the handoff breaks with no visible error, so check every time you
+   reinstall. `shortcuts list | grep PlaylistButtons` is the quickest way.
 4. It syncs to the phone over iCloud, assuming Shortcuts sync is on for both
    devices. Give it a minute.
 5. On the phone, open the shortcut once and run it manually. It will fail (no
