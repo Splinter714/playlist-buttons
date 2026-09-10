@@ -10,19 +10,28 @@
 // refreshed behind the paint). The grid is the two joined.
 
 import './grid.css';
+import './settings.css';
 import './debug.css';
 
 import { beginLogin, handleRedirect, isLoggedIn, logout, getAuth, startRefreshTimer } from './auth.js';
 import { sessionScopesStale } from './scopes.js';
 import { readCache, hasCache, refreshPlaylists, clearCache, purgeLegacyStorage } from './playlists.js';
-import { readRotation, joinRotation } from './rotation.js';
+import {
+  readRotation, joinRotation, buildCandidates,
+  addToRotation, removeFromRotation, isInRotation, toggleNofadein,
+} from './rotation.js';
+import {
+  readFadeMs, writeFadeMs, MIN_FADE_MS, MAX_FADE_MS, FADE_STEP_MS,
+} from './settings.js';
 import { resolveView } from './view.js';
 import { renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTriggerRecorder } from './grid.js';
+import { renderSettings } from './settings-view.js';
 import { readNowPlaying, resolveNowPlaying } from './nowplaying.js';
 import { renderDebugAuth, renderDebugPlaylists, setDebugStatus, initDebugToggle } from './debug.js';
 
 const appEl = document.getElementById('app');
 const appStatusEl = document.getElementById('app-status');
+const navEl = document.getElementById('nav-settings');
 
 const state = {
   items: [],
@@ -40,7 +49,66 @@ function setAppStatus(text = '', kind = '') {
   appStatusEl.className = kind;
 }
 
+/** Two screens, told apart by the hash so the back gesture works. */
+function currentRoute() {
+  return location.hash.replace(/^#\/?/, '') === 'settings' ? 'settings' : 'grid';
+}
+
+function paintNav(route) {
+  if (!navEl) return;
+  const onSettings = route === 'settings';
+  navEl.textContent = onSettings ? 'done' : 'settings';
+  navEl.href = onSettings ? '#' : '#settings';
+}
+
+/**
+ * The settings screen changes the rotation, so it hands back a fresh candidate list on
+ * every tap and keeps the grid's own state in step — but it deliberately does NOT
+ * repaint: the list updates its rows in place, and a repaint here would rebuild them
+ * under the user's thumb.
+ */
+function candidates() {
+  return buildCandidates(readCache(), readRotation());
+}
+
+function afterRotationChange() {
+  state.items = joinRotation(readRotation(), readCache());
+  renderDebugPlaylists(state.items, state.candidateCount);
+  return candidates();
+}
+
+function paintSettings() {
+  renderSettings(appEl, {
+    loggedIn: isLoggedIn(),
+    loading: !state.cachePresent && !state.settled,
+    fadeMs: readFadeMs(),
+    minFadeMs: MIN_FADE_MS,
+    maxFadeMs: MAX_FADE_MS,
+    stepFadeMs: FADE_STEP_MS,
+    candidates: candidates(),
+    onToggleMember: (id) => {
+      if (isInRotation(id)) removeFromRotation(id);
+      else addToRotation(id); // appends to the end (#8)
+      return afterRotationChange();
+    },
+    onToggleNofadein: (id) => {
+      toggleNofadein(id);
+      return afterRotationChange();
+    },
+    onFadeChange: (ms) => writeFadeMs(ms),
+    onLogin: () => beginLogin(),
+  });
+}
+
 function paint() {
+  const route = currentRoute();
+  paintNav(route);
+
+  if (route === 'settings') {
+    paintSettings();
+    return;
+  }
+
   const view = resolveView({
     loggedIn: isLoggedIn(),
     cachePresent: state.cachePresent,
@@ -77,6 +145,9 @@ async function main() {
   // One delegated listener for the life of the page: the grid re-renders, this does not.
   // It records the tap and returns — the anchor's own navigation does the rest (#4).
   attachTriggerRecorder(appEl);
+
+  // Grid ⇄ settings. The hash is the whole router.
+  window.addEventListener('hashchange', paint);
 
   const redirect = await handleRedirect();
   if (redirect.error) {

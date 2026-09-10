@@ -141,8 +141,8 @@ body {
   .tile--skeleton { animation: none; }
 }
 
-/* The "nothing tagged" message and the signed-out prompt. Plain by design — #8
-   replaces the first of these with a real setup screen. */
+/* The empty-rotation message and the signed-out prompt. Both point somewhere: the
+   first at the settings screen (#8), the second at the login. */
 .notice {
   padding: 24px 6px;
   color: var(--muted);
@@ -151,7 +151,10 @@ body {
 .notice p { margin: 0 0 10px; }
 .notice code, .notice .tag { color: var(--fg); font-family: ui-monospace, Menlo, monospace; }
 
-button.primary {
+/* Shared by the sign-in button and the empty state's link to settings — an anchor,
+   because that one is navigation, not an action. */
+.primary {
+  display: inline-block;
   margin-top: 6px;
   padding: 11px 16px;
   border: 0;
@@ -160,6 +163,8 @@ button.primary {
   color: #08130b;
   font-size: 15px;
   font-weight: 600;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Status line: revalidation notes and errors, kept quiet under the grid. */

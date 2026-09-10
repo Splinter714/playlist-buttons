@@ -1,0 +1,223 @@
+/* The settings screen (#5 / #6 / #8). Same phone-first, dim-room palette as the grid —
+   variables come from grid.css, which is imported first. */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.settings-section h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.section-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fade-value {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tall enough to hit with a thumb without looking in the way. */
+.fade-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  margin: 12px 0 2px;
+  background: transparent;
+}
+.fade-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: #33333c;
+}
+.fade-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -11px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.fade-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: #33333c;
+}
+.fade-slider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.rot-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pl-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.pl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #1e1e24;
+}
+
+/* The row body is the add/remove target: the whole width of it, minus the toggle. */
+.pl-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.pl-main:active { opacity: 0.6; }
+
+.pl-art {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--tile-bg);
+  display: block;
+}
+.pl-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pl-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pl-name {
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--muted);
+  /* Two lines then an ellipsis, same as the tile — a long name must not reflow the row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.pl-row.is-member .pl-name {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.pl-meta {
+  font-size: 11px;
+  color: #6e6e78;
+}
+
+/* A dotted outline for "not in", a filled green disc with its button number for "in".
+   The number is what makes "adding appends to the end" visible. */
+.pl-badge {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px dashed #45454f;
+  color: #6e6e78;
+  font-size: 14px;
+  line-height: 24px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.pl-row.is-member .pl-badge {
+  border: 0;
+  background: var(--accent);
+  color: #08130b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+/* #6, on the member's own row. Off is an outline; on is filled, because "starts loud"
+   is the exceptional state and should look like one. */
+.pl-nofadein {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 6px 10px;
+  border: 1px solid #33333c;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.pl-nofadein.is-on {
+  border-color: var(--accent);
+  background: rgba(29, 185, 84, 0.16);
+  color: var(--accent);
+}
+.pl-nofadein[hidden] { display: none; }
+
+/* The top bar: the only navigation there is. */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px var(--pad) 2px;
+}
+#topbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+#nav-settings {
+  padding: 6px 12px;
+  border: 1px solid #33333c;
+  border-radius: 999px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (min-width: 560px) {
+  #topbar { max-width: 560px; margin: 0 auto; }
+}

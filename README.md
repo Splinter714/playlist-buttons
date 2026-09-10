@@ -63,7 +63,10 @@ reads the playlist list.
 ```
 
 The array order *is* the button order, so reordering is moving an element. It's an
-include list: nothing is in the rotation until it's added, from the setup page.
+include list: nothing is in the rotation until it's added, from the settings screen —
+which is also the only way to take something off it, and where the fade length and each
+playlist's `nofadein` are set. One screen, reached from the grid, no search box: a plain
+scrolling list of every playlist on the account, tapped to add or remove.
 
 This started out the other way round. Membership lived in the playlist description as
 a `[game order:3 nofadein]` tag, which was appealing because it's managed from the
@@ -76,15 +79,22 @@ truth for the rotation and had to go entirely.
 
 What that costs, accepted knowingly: the rotation is per-browser. It doesn't sync to
 another device, and clearing Safari's site data loses it. Everything here runs on the
-one phone anyway, and rebuilding the list from the setup page is a couple of minutes'
+one phone anyway, and rebuilding the list from the settings screen is a couple of minutes'
 work, so there's no export or backup for now. Any `[game ...]` tags still sitting in
 descriptions are dead text — nothing reads them; delete them by hand if they annoy
 you.
 
 `GET /me/playlists` still pages through everything, but it's now the *candidate*
-list — the pool the setup page picks from, and the source of names and cover art —
+list — the pool the settings screen picks from, and the source of names and cover art —
 rather than the rotation itself. It already returns playlists you follow but don't
 own, which is the whole point.
+
+## Fade
+
+One duration, used for both the fade out and the fade in, 3s by default, adjustable on
+the settings screen and stored in `localStorage` alongside the rotation. It's global —
+there's no per-playlist fade length. The one per-playlist thing is `nofadein`, which
+means the new playlist starts at full volume instead of ramping (`upMs: 0`).
 
 ## Shortcut contract
 

@@ -108,6 +108,36 @@ export function toggleNofadein(id) {
  * @param {Array<{id: string, nofadein: boolean}>} entries
  * @param {Array<{id: string}>} playlists
  */
+/**
+ * The settings screen's list (#8): every playlist on the account, each marked with whether
+ * it is already in the rotation, where it sits, and its `nofadein` flag.
+ *
+ * The opposite direction to joinRotation. That one starts from the rotation and drops
+ * anything without metadata; this one starts from the candidate list and keeps everything,
+ * because the whole point of the screen is showing what you could still add.
+ *
+ * @param {Array<{id: string}>} playlists the cached `/me/playlists` result
+ * @param {Array<{id: string, nofadein: boolean}>} entries
+ */
+export function buildCandidates(playlists, entries = readRotation()) {
+  const byId = new Map();
+  (Array.isArray(entries) ? entries : []).forEach((e, i) => {
+    if (e?.id) byId.set(e.id, { position: i + 1, nofadein: e.nofadein === true });
+  });
+  const out = [];
+  for (const p of Array.isArray(playlists) ? playlists : []) {
+    if (!p?.id) continue;
+    const member = byId.get(p.id);
+    out.push({
+      ...p,
+      inRotation: Boolean(member),
+      position: member ? member.position : null,
+      nofadein: member ? member.nofadein : false,
+    });
+  }
+  return out;
+}
+
 export function joinRotation(entries, playlists) {
   const meta = new Map((Array.isArray(playlists) ? playlists : []).filter((p) => p?.id).map((p) => [p.id, p]));
   const out = [];

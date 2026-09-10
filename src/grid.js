@@ -82,17 +82,18 @@ export function renderSkeleton(root) {
 }
 
 /**
- * Empty rotation. Deliberately plain and deliberately temporary: #8 builds the setup page
- * this points at, and replaces this message with it. Not worth investing in.
- *
- * Since #9 the rotation is a local include-list, so it starts empty and the setup page is
- * the only way to fill it — there is no longer anything to do in the Spotify app.
+ * Empty rotation — the first thing anyone sees, since #9 made the rotation a local
+ * include-list that starts empty. It used to say the setup page did not exist yet; #8
+ * built it, so this now points straight at it rather than dead-ending.
  */
-export function renderEmpty(root) {
+export function renderEmpty(root, { settingsHref = '#settings' } = {}) {
   clear(root);
   const box = el('div', 'notice');
   box.append(el('p', null, 'Nothing in the rotation yet.'));
-  box.append(el('p', null, 'Playlists get added from the setup page, which is not built yet.'));
+  box.append(el('p', null, 'Pick the playlists you want as buttons — they show up here in the order you add them.'));
+  const link = el('a', 'primary', 'Choose playlists');
+  link.href = settingsHref;
+  box.append(link);
   root.append(box);
 }
 

@@ -8,7 +8,15 @@
     <title>playlist buttons</title>
   </head>
   <body>
-    <!-- The button grid (issue #2). -->
+    <!-- The only navigation there is: grid ⇄ settings (#5/#6/#8), on the URL hash so
+         the phone's back gesture works and the return from a transition (#4) lands
+         back on the grid. -->
+    <header id="topbar">
+      <span id="topbar-title">playlist buttons</span>
+      <a id="nav-settings" href="#settings">settings</a>
+    </header>
+
+    <!-- The button grid (issue #2), or the settings screen. -->
     <main id="app"></main>
     <div id="app-status"></div>
 

@@ -62,7 +62,7 @@ export function renderDebugPlaylists(items, candidateCount = null) {
 
   if (!items.length) {
     const empty = document.createElement('p');
-    empty.textContent = 'The rotation is stored locally and starts empty — #8 builds the page that fills it.';
+    empty.textContent = 'The rotation is stored locally and starts empty — fill it from the settings screen (#8).';
     listEl.append(empty);
     return;
   }
