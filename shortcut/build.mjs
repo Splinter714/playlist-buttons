@@ -144,16 +144,48 @@ const nested = (entries) => ({ type: ITEM_DICT, value: dictField(entries) });
 // ---------------------------------------------------------------------------
 
 const actions = [];
+
+/**
+ * UUID of the most recently emitted action. Set Variable needs it: without an
+ * explicit WFInput naming what to store, Set Variable silently stores nothing and
+ * every later reference to that variable comes back empty. Verified on-device — a
+ * probe reading a variable set without WFInput returned "", while the same variable
+ * set with it returned the value.
+ */
+let lastUUID = null;
+
 const act = (identifier, parameters = {}) => {
-  actions.push({ WFWorkflowActionIdentifier: identifier, WFWorkflowActionParameters: parameters });
+  const params = { ...parameters };
+  if (!params.UUID) params.UUID = uuid();
+  lastUUID = params.UUID;
+  actions.push({ WFWorkflowActionIdentifier: identifier, WFWorkflowActionParameters: params });
 };
 
 const comment = (t) => act('is.workflow.actions.comment', { WFCommentActionText: t });
 
 /** Get Dictionary from Input. Returns its output UUID. */
-function getDictionaryFromInput() {
+/**
+ * Get Dictionary from Input, reading Shortcut Input explicitly.
+ *
+ * Without WFInput this action takes whatever the previous action produced. That is
+ * fine mid-chain (after an HTTP response, say), but the first use here is preceded by
+ * a Comment, which produces nothing — so the dictionary came back empty and every
+ * value unpacked from it was blank, surfacing as "Math error" on the first
+ * calculation. Naming ExtensionInput makes it independent of what sits above it.
+ *
+ * Pass `fromPrevious: true` where the dictionary really should come from the
+ * preceding action rather than the shortcut's own input.
+ */
+function getDictionaryFromInput({ fromPrevious = false } = {}) {
   const id = uuid();
-  act('is.workflow.actions.detect.dictionary', { UUID: id });
+  const params = { UUID: id };
+  if (!fromPrevious) {
+    params.WFInput = {
+      Value: { Type: 'ExtensionInput' },
+      WFSerializationType: 'WFTextTokenAttachment',
+    };
+  }
+  act('is.workflow.actions.detect.dictionary', params);
   return id;
 }
 
@@ -164,7 +196,20 @@ function getValueForKey(key) {
   return id;
 }
 
-const setVariable = (name) => act('is.workflow.actions.setvariable', { WFVariableName: name });
+/**
+ * Store the previous action's output under a name. The WFInput is not optional —
+ * see lastUUID above.
+ */
+const setVariable = (name) => {
+  const source = lastUUID;
+  act('is.workflow.actions.setvariable', {
+    WFVariableName: name,
+    WFInput: {
+      Value: { Type: 'ActionOutput', OutputUUID: source, OutputName: 'Result' },
+      WFSerializationType: 'WFTextTokenAttachment',
+    },
+  });
+};
 
 const getVariable = (name) =>
   act('is.workflow.actions.getvariable', { WFVariable: tokenAttachment(varRef(name)) });
@@ -354,7 +399,8 @@ getVariable('playResult');
 const playFailed = ifContains('error');
 
 httpRequest({ url: `${API}/me/player/devices`, headers: authHeaders() });
-getDictionaryFromInput();
+// This one really does want the preceding HTTP response, not the shortcut's input.
+getDictionaryFromInput({ fromPrevious: true });
 getValueForKey('devices');
 getFirstItem();
 getValueForKey('id');

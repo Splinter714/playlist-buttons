@@ -168,14 +168,22 @@ app binary.
 Three of these were settled by running probe shortcuts on the Mac and reading their
 output back, rather than reasoning about them.
 
-**`Set Variable` needs an explicit `WFInput`.** This was a real bug, not a guess that
-happened to be wrong. Emitting `setvariable` with only `WFVariableName` produces an
-action that silently stores *nothing* — every later reference to that variable comes
-back empty. A probe comparing the two forms returned `B=[]` for a variable set
-without `WFInput` and `C=[8]` for the same variable set with it. Since the first
-thing the shortcut does is unpack six values into variables, everything downstream
-was empty, and the first calculation died on `"" / 12 / 1000` — surfacing as a bare
-"Math error" dialog with no indication of which action failed.
+**The real fault was `Get Dictionary from Input` not reading Shortcut Input.**
+Without `WFInput`, that action takes whatever the *previous* action produced. Fine
+mid-chain — after an HTTP response, say — but here it was preceded by a `Comment`,
+which produces nothing. So the dictionary was empty, all six unpacked values were
+blank, and the first calculation died on `"" / 12 / 1000`, surfacing as a bare "Math
+error" with no indication of which action failed. It now names `ExtensionInput`
+explicitly, so it no longer depends on what sits above it. The one mid-chain use, for
+the `/me/player/devices` response, passes `fromPrevious: true`.
+
+**A correction on `Set Variable`.** An earlier note here claimed `setvariable`
+requires an explicit `WFInput` or it silently stores nothing, based on a probe where
+the bare form came back empty. Jackson's own working `refresh_token` shortcut
+disproves the general claim — its `setvariable` actions carry no `WFInput` and work.
+The `WFInput` this generator emits is harmless and arguably clearer (the phone renders
+it as "Set variable V0 to Current Volume"), but it was not the bug, and the probe
+result most likely reflected something else about that probe.
 
 `build.mjs` now tracks the previously emitted action's UUID and points each
 `Set Variable` at it.
