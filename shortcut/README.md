@@ -180,20 +180,27 @@ this generator that is handled at the helper level, via `prevRef()`:
 
 | Action | Parameter |
 | --- | --- |
-| Get Dictionary from Input | `WFInput` — `ExtensionInput`, or the previous action |
+| Get Dictionary from Input | `WFInput` — `ExtensionInput`, or explicitly the previous action. Omitting it does **not** chain; it silently falls back to Shortcut Input |
 | Get Value for Key | `WFInput` |
 | Get Item from List | `WFInput` |
 | Get Contents of URL | `WFURL` — the URL **itself**, not a reference |
 | If (opening, `WFControlFlowMode: 0`) | **none** — see the exceptions below |
 | Set Variable | `WFInput` |
 
-**Conditionals are the other exception.** An `If` chains from the preceding action
-implicitly, and naming a `WFInput` appears to break it — the condition renders blank on
-device. Its comparison value also has to be a **plain string**: a `WFTextTokenString` in
-`WFConditionalActionString` leaves the condition empty too. `WFCondition` can be omitted
-entirely, which defaults to "contains" for text. The shape here is copied field for
-field from a working conditional in one of Jackson's own shortcuts. Do not "fix" it by
-adding an input.
+**Conditionals are the other exception, in three ways.** An `If` chains from the
+preceding action implicitly and takes no `WFInput`. Its comparison value is a **plain
+string** — a `WFTextTokenString` there leaves the condition blank. And, least
+obviously, **an opening `If` must carry no `UUID` at all**: in the reference shortcut
+all 7 opening conditionals and both `Repeat` openers are UUID-less, while `End If`
+markers sometimes have one and work either way. This generator assigns UUIDs
+automatically so actions can reference each other's output, so conditionals opt out via
+`act(..., { noUUID: true })`.
+
+That last one cost three rebuilds. The condition rendered blank on device while every
+field in it was already correct, because of a key that shouldn't have been there.
+
+`WFCondition` is omitted, which defaults to "contains" for text. Do not "fix" any of
+this by adding an input or a UUID.
 
 **Get Contents of URL is the exception to the rule above.** It does not take a
 reference to a preceding action — it carries its own URL. An earlier version emitted a

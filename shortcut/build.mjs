@@ -154,10 +154,16 @@ const actions = [];
  */
 let lastUUID = null;
 
-const act = (identifier, parameters = {}) => {
+/**
+ * Emit an action. A UUID is assigned automatically so the next action can reference
+ * this one's output — EXCEPT for control flow, which must stay UUID-less: every
+ * conditional in the working reference shortcut has no UUID, and adding one renders
+ * the condition blank on device. Pass `{ noUUID: true }` for those.
+ */
+const act = (identifier, parameters = {}, { noUUID = false } = {}) => {
   const params = { ...parameters };
-  if (!params.UUID) params.UUID = uuid();
-  lastUUID = params.UUID;
+  if (!noUUID && !params.UUID) params.UUID = uuid();
+  if (params.UUID) lastUUID = params.UUID;
   actions.push({ WFWorkflowActionIdentifier: identifier, WFWorkflowActionParameters: params });
 };
 
@@ -179,12 +185,9 @@ const comment = (t) => act('is.workflow.actions.comment', { WFCommentActionText:
 function getDictionaryFromInput({ fromPrevious = false } = {}) {
   const id = uuid();
   const params = { UUID: id };
-  if (!fromPrevious) {
-    params.WFInput = {
-      Value: { Type: 'ExtensionInput' },
-      WFSerializationType: 'WFTextTokenAttachment',
-    };
-  }
+  params.WFInput = fromPrevious
+    ? prevRef('Contents of URL')
+    : { Value: { Type: 'ExtensionInput' }, WFSerializationType: 'WFTextTokenAttachment' };
   act('is.workflow.actions.detect.dictionary', params);
   return id;
 }
@@ -314,11 +317,11 @@ function httpRequest({ url, method, headers, json }) {
  */
 function ifContains(substring) {
   const group = uuid();
-  act('is.workflow.actions.conditional', {
-    GroupingIdentifier: group,
-    WFConditionalActionString: substring,
-    WFControlFlowMode: 0,
-  });
+  act(
+    'is.workflow.actions.conditional',
+    { GroupingIdentifier: group, WFConditionalActionString: substring, WFControlFlowMode: 0 },
+    { noUUID: true },
+  );
   return group;
 }
 
