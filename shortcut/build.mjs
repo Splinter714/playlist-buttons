@@ -299,15 +299,25 @@ function httpRequest({ url, method, headers, json }) {
 
 // Control flow. Each If / Repeat is a matched pair sharing a GroupingIdentifier;
 // WFControlFlowMode is 0 = start, 1 = otherwise, 2 = end.
+/**
+ * If <previous output> contains `substring`.
+ *
+ * Copied field for field from a conditional in Jackson's own working shortcut, because
+ * two earlier shapes rendered as a blank condition on device:
+ *
+ * - `WFConditionalActionString` is a PLAIN string, not a token string. A
+ *   WFTextTokenString here leaves the condition empty.
+ * - No `WFInput`. Unlike Get Value for Key and friends, a conditional chains from the
+ *   preceding action implicitly, and naming an input appears to break it. This is the
+ *   exception to the wiring rule above — do not "fix" it by adding one.
+ * - `WFCondition` is omitted entirely; it defaults to "contains" for text.
+ */
 function ifContains(substring) {
-  const input = prevRef('Contents of URL');
   const group = uuid();
   act('is.workflow.actions.conditional', {
     GroupingIdentifier: group,
-    WFCondition: 'Contains',
-    WFConditionalActionString: tokenString(substring),
+    WFConditionalActionString: substring,
     WFControlFlowMode: 0,
-    WFInput: input,
   });
   return group;
 }
