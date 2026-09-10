@@ -188,6 +188,11 @@ one installed shortcut serves both the dev server and the Pages build.
 `shuffle` and `offset` are decided together: normally `true` with a random offset, and
 for an `inorder` playlist `false` with `offset: 0`.
 
+The shortcut applies them in that order too — play first, naming the start track with
+`offset`, then shuffle. Setting shuffle first raced the play call and lost, so "no
+shuffle" started on track 1 and shuffled everything after it; Spotify does not guarantee
+the order two Player writes are applied in. See `shortcut/README.md`.
+
 `upMs: 0` means restore to full volume immediately instead of ramping. The restore
 happens *after* the play call returns, so the outgoing track never jumps back up.
 

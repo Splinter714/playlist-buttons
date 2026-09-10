@@ -68,12 +68,31 @@ describe('the generated shortcut takes shuffle from its input (#10)', () => {
     expect(plist).toMatch(/<key>VariableName<\/key>\s*<string>offset<\/string>/);
   });
 
+  it('sets shuffle AFTER starting the playlist, not before', () => {
+    // Spotify does not guarantee the order two Player writes are applied in, and starting
+    // a context is reported to reset shuffle — so setting it first raced the play call and
+    // lost, which is what made "no shuffle" shuffle anyway. The play call names the start
+    // track via `offset`, so settling the queue behind it is safe to do second.
+    const play = plist.indexOf('me/player/play');
+    const shuffle = plist.indexOf('me/player/shuffle');
+    expect(play).toBeGreaterThan(-1);
+    expect(shuffle).toBeGreaterThan(play);
+  });
+
+  it('leaves a gap between the two player writes so they cannot land out of order', () => {
+    const play = plist.indexOf('me/player/play');
+    const shuffle = plist.indexOf('me/player/shuffle');
+    const delay = plist.indexOf('is.workflow.actions.delay', play);
+    expect(delay).toBeGreaterThan(play);
+    expect(delay).toBeLessThan(shuffle);
+  });
+
   it('returns to the app before the fade-in rather than at the end of the run', () => {
     // x-success only fires when the whole run finishes, which is the wait this avoids.
     // So there is an explicit switch-apps action, and it sits after the play call and
     // before the fade-in ramp — the order is the whole point.
     const openApp = plist.indexOf('is.workflow.actions.openapp');
-    const play = plist.indexOf('me/player/play');
+    const play = plist.indexOf('me/player/shuffle');
     const fadeIn = plist.lastIndexOf('is.workflow.actions.setvolume');
     expect(openApp).toBeGreaterThan(play);
     expect(openApp).toBeLessThan(fadeIn);

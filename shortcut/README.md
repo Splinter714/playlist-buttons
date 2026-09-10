@@ -91,10 +91,11 @@ from here.
    of `V0`, so starting at 60% fades from 60% rather than jumping to 100% first.
 3. Fade out: repeat `STEPS` times, setting volume to `V0 × (STEPS − Repeat Index) / STEPS`
    and waiting `downMs / STEPS / 1000` seconds.
-4. `PUT /v1/me/player/shuffle?state=<shuffle>` — the value comes from the input,
-   not from here. It is `true` for an ordinary playlist and `false` for one
-   marked "no shuffle" in settings, which also arrives with `offset: 0` (#10).
-5. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
+4. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
+5. A short wait, then `PUT /v1/me/player/shuffle?state=<shuffle>` — the value
+   comes from the input, not from here. It is `true` for an ordinary playlist and
+   `false` for one marked "no shuffle" in settings, which also arrives with
+   `offset: 0` (#10). **After the play call, deliberately** — see below.
 6. **Open App → Safari**, handing the phone straight back to the app now that
    the playlist is playing, so the fade-in happens with the app on screen instead
    of with Shortcuts on screen. `RETURN_VIA` in `build.mjs` picks the mechanism —
@@ -300,6 +301,30 @@ This was guessed at when #10 was built, and the symptom predicted then was *sile
 playback starting normally with shuffle left however it was. It turned out to be a loud
 400 instead, which is the better outcome.
 
+### Shuffle is set AFTER the play call
+
+It used to be set before, and "no shuffle" did not stick: the playlist started on
+track 1, because `offset` said so, and then shuffled everything after it.
+
+Two things account for that, and neither is a bug in this shortcut. Spotify's own
+reference for [toggle shuffle](https://developer.spotify.com/documentation/web-api/reference/toggle-shuffle-for-users-playback)
+says the order of execution is **not guaranteed** when it is combined with other
+Player endpoints, and starting a context is separately reported to reset the
+shuffle state ([spotify/web-api#605](https://github.com/spotify/web-api/issues/605)).
+Setting shuffle first was therefore racing the play call, and usually losing.
+
+Doing it second is safe because the play call names the start track: `offset`
+decides the first track whatever shuffle happens to be at that instant, and the
+shuffle call only settles the queue behind it. `SHUFFLE_SETTLE_SECONDS` sits
+between the two for the same "not guaranteed" reason — two Player writes back to
+back can be applied out of order.
+
+The same race applied to ordinary playlists, where it was invisible: a random
+start offset feels shuffled whether or not shuffle actually took.
+
+Both calls happen before the return to Safari, so neither depends on a
+backgrounded run.
+
 ### Verified on device, 2026-09-09
 
 Three of these were settled by running probe shortcuts on the Mac and reading their
@@ -361,15 +386,6 @@ the dyld shared cache), so these four could not be verified locally:
 
 Two smaller ones:
 
-- **The `shuffle` boolean interpolated into the URL.** The input JSON carries
-  `shuffle` as a real boolean, and the URL is built as
-  `…/shuffle?state=` + the `shuffle` variable, so this relies on Shortcuts
-  rendering a dictionary boolean into text as `true` / `false`. If it renders
-  `1` / `0` instead, Spotify rejects the call with a 400 and — because the
-  shuffle call's result is not checked — the symptom is subtle: playback still
-  starts, but shuffle stays however it was last left, so a "no shuffle" playlist
-  shuffles anyway. Fix by having the web app send the string `"true"`/`"false"`
-  in `handoff.js` instead of a boolean.
 - **`WFItemType: 3` for `offset.position`.** If Spotify gets `"position": "47"`
   as a string rather than a number it may reject the play call with a 400. The
   symptom is the alert firing on every tap with a message about a malformed

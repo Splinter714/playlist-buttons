@@ -49,6 +49,14 @@ const STEPS = 20;
  */
 const RETURN_VIA = 'app';
 
+/**
+ * Seconds between the play call and the shuffle call. Spotify does not guarantee the
+ * order two Player writes are applied in, and back-to-back they can land the wrong way
+ * round; a fraction of a second is enough to stop it. Paid once per transition, inside
+ * the app switch rather than after it.
+ */
+const SHUFFLE_SETTLE_SECONDS = 0.4;
+
 /** Seconds to wait after transferring to a device before retrying playback. */
 const DEVICE_TRANSFER_SETTLE_SECONDS = 0.5;
 
@@ -489,18 +497,10 @@ ramp({
   fractionParts: [varRef('V0'), ` * (${STEPS} - `, varRef('Repeat Index'), `) / ${STEPS}`],
 });
 
-// 4. Shuffle, as the app asked for it (#10). Normally true, so the random offset lands
-//    in a shuffled queue; false for a playlist marked "no shuffle", which also arrives with
-//    `offset: 0` so it starts on track 1. The app decides; this used to be hardcoded to
-//    `?state=true`.
-comment('Set shuffle from the input (true normally, false for an in-order playlist)');
-httpRequest({
-  url: tokenString(`${API}/me/player/shuffle?state=`, varRef('shuffle')),
-  method: 'PUT',
-  headers: authHeaders(),
-});
-
-// 5. Start the new playlist.
+// 4. Start the new playlist.
+//
+//    BEFORE the shuffle call, not after — this order is the whole fix for "no shuffle"
+//    not sticking. See step 5.
 comment('Start the playlist');
 httpRequest({
   url: `${API}/me/player/play`,
@@ -509,6 +509,31 @@ httpRequest({
   json: playBody(),
 });
 setVariable('playResult');
+
+// 5. Shuffle, as the app asked for it (#10). Normally true, so the random offset lands in
+//    a shuffled queue; false for a playlist marked "no shuffle", which also arrives with
+//    `offset: 0` so it starts on track 1.
+//
+//    AFTER the play call, and this is not arbitrary. Spotify's own reference for the
+//    toggle-shuffle endpoint says the order of execution is NOT GUARANTEED when it is
+//    combined with other Player endpoints, and starting a context is separately reported
+//    to reset the shuffle state (spotify/web-api#605). Setting it first therefore raced
+//    the play call and usually lost: "no shuffle" started on track 1, because `offset`
+//    said so, and then shuffled everything after it.
+//
+//    Naming the start track in the play call is what makes this safe to do second: the
+//    first track is decided by `offset`, whatever shuffle happens to be at that instant,
+//    and this only settles the queue behind it.
+//
+//    The wait is for the same "not guaranteed" reason — two Player writes back to back
+//    can be applied out of order, and a fraction of a second is enough to stop it.
+comment('Set shuffle from the input, AFTER the play call (true normally, false for in-order)');
+wait(SHUFFLE_SETTLE_SECONDS);
+httpRequest({
+  url: tokenString(`${API}/me/player/shuffle?state=`, varRef('shuffle')),
+  method: 'PUT',
+  headers: authHeaders(),
+});
 
 // 6. Go back to Safari NOW, with the new playlist already playing, and let the fade-in
 //    run behind it. The alternative is standing in Shortcuts for the whole transition —
