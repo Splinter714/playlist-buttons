@@ -1,0 +1,51 @@
+# Deploy the app to GitHub Pages.
+#
+# MANUAL TRIGGER ONLY — deliberately. There is no `on: push` here.
+#
+# Deploying is an outward-facing action that needs a fresh, explicit go every time.
+# An auto-deploy-on-push workflow would ship whatever landed on main the moment it
+# landed, including work that is still awaiting playtest. Run it with:
+#
+#   gh workflow run deploy.yml
+#
+name: Deploy to Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race, but never cancel one halfway either.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      # vite.config.js sets base: '/playlist-buttons/' to match the Pages path.
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
