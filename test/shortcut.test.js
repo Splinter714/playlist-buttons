@@ -23,11 +23,17 @@ beforeAll(() => {
   plist = readFileSync(built, 'utf8');
 });
 
-/** The `<dict>` block for the action whose URL string contains `needle`. */
+/**
+ * The `<dict>` block for the request whose URL string contains `needle`.
+ *
+ * Get Contents of URL carries its own URL under `WFURL`. It used to follow a separate
+ * `url` action (`WFURLActionURL`) and read that action's output, but that produced
+ * "No URL Specified" on device — see shortcut/README.md.
+ */
 function urlActionFor(needle) {
-  const blocks = plist.split('<key>WFURLActionURL</key>');
+  const blocks = plist.split('<key>WFURL</key>');
   const match = blocks.slice(1).find((b) => b.includes(needle));
-  expect(match, `no URL action containing ${needle}`).toBeDefined();
+  expect(match, `no request containing ${needle}`).toBeDefined();
   // Everything up to the end of this action's parameters is enough to read the URL and
   // any variable attachment inside it.
   return match.slice(0, match.indexOf('WFWorkflowActionIdentifier'));

@@ -183,9 +183,17 @@ this generator that is handled at the helper level, via `prevRef()`:
 | Get Dictionary from Input | `WFInput` — `ExtensionInput`, or the previous action |
 | Get Value for Key | `WFInput` |
 | Get Item from List | `WFInput` |
-| Get Contents of URL | `WFURL` |
+| Get Contents of URL | `WFURL` — the URL **itself**, not a reference |
 | If (opening, `WFControlFlowMode: 0`) | `WFInput` |
 | Set Variable | `WFInput` |
+
+**Get Contents of URL is the exception to the rule above.** It does not take a
+reference to a preceding action — it carries its own URL. An earlier version emitted a
+separate `url` action and pointed `WFURL` at that action's output, which gave
+"No URL Specified" on device. `WFURL` now holds the URL directly: a plain string, or a
+token string where a variable is interpolated. That is the shape the action has when
+you type a URL straight into it in the editor, and it removes four actions along with
+the chaining question.
 
 `End If` and `Otherwise` markers take no input, and Repeat's control-flow entries take
 none either. Anything added to this generator later that reads a prior value needs the

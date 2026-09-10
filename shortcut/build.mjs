@@ -273,22 +273,23 @@ const showAlert = (title, message) =>
 const stopShortcut = () => act('is.workflow.actions.exit');
 
 /** URL action — Get Contents of URL takes its address from this action's output. */
-function urlAction(url) {
-  const id = uuid();
-  act('is.workflow.actions.url', { UUID: id, WFURLActionURL: url });
-  return id;
-}
-
 /**
  * Get Contents of URL. Emits the preceding URL action too, so a request is one
  * call here. Omitting WFHTTPMethod means GET; omitting WFHTTPBodyType with
  * WFJSONValues present means a JSON body — both match a known-good shortcut.
  */
+/**
+ * Get Contents of URL, holding its own URL.
+ *
+ * An earlier version emitted a separate `url` action and pointed WFURL at its output,
+ * which gave "No URL Specified" on device. This is the shape the action has when you
+ * type a URL straight into it in the editor: WFURL carries the URL itself — a plain
+ * string, or a token string where a variable is interpolated. No second action, and
+ * nothing to chain.
+ */
 function httpRequest({ url, method, headers, json }) {
-  urlAction(url);
-  const target = prevRef('URL');
   const id = uuid();
-  const params = { Advanced: true, ShowHeaders: true, UUID: id, WFURL: target };
+  const params = { Advanced: true, ShowHeaders: true, UUID: id, WFURL: url };
   if (method && method !== 'GET') params.WFHTTPMethod = method;
   if (headers) params.WFHTTPHeaders = dictField(headers);
   if (json) params.WFJSONValues = dictField(json);
