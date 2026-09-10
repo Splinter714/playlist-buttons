@@ -2,10 +2,10 @@
 //
 // #5, #6, #8 and now #3 all landed here rather than becoming separate screens:
 //   Fade     (#5) — one duration, both directions, global. No per-playlist override.
-//   Rotation (#8) — every playlist on the account, tap to add or remove. Adding appends
+//   Buttons  (#8) — every playlist on the account, tap to add or remove. Adding appends
 //                   to the end. This is the ONLY way membership changes now that #9 has
 //                   removed description tags.
-//   No fade  (#6) — a per-member toggle living on that playlist's row, not in a
+//   No fade-in (#6) — a per-member toggle living on that playlist's row, not in a
 //                   separate list and not behind a long-press.
 //   No shuffle (#10) — a SECOND, independent per-member toggle beside it. Two pills, not
 //                   one three-way control: a playlist can start loud, start at track 1,
@@ -29,27 +29,19 @@
 // the cover art of a list that can be hundreds long, so nodes are moved, never remade.
 
 import { attachDragReorder } from './drag.js';
-import { SHORTCUT_URL } from './config.js';
 
 /** The two per-playlist flags, and what each pill says. Both name the exception. */
 export const FLAG_LABELS = [
-  ['nofadein', 'no fade'],
+  ['nofadein', 'no fade-in'],
   ['inorder', 'no shuffle'],
 ];
 
-/** The Shortcut section. Says what the shortcut is for before it asks anyone to go get it. */
-export const SHORTCUT_HEADING = 'Shortcut';
-export const SHORTCUT_NOTE =
-  'The fade runs in an iOS shortcut called PlaylistButtons. Until it is installed on this '
-  + 'phone under exactly that name, tapping a button does nothing.';
-export const SHORTCUT_LINK_TEXT = 'Get the shortcut';
-
-/** What the Rotation section says it does, now that order is set here too (#3). */
+/** What the Buttons section says it does, now that order is set here too (#3). */
 export const ROTATION_NOTE =
   'Tap a playlist to add it to the grid or take it off. New ones go on the end — drag the handles to reorder.';
 
 /** The divider between the rotation and the rest of the account. */
-export const REST_HEADING = 'Everything else';
+export const REST_HEADING = 'Other playlists';
 
 /** Only members are draggable, and only by their handle — the row body is still a tap. */
 const MEMBER_SELECTOR = '.pl-row.is-member';
@@ -216,7 +208,6 @@ function arrange(list, nodes) {
  * @param {number}  opts.minFadeMs
  * @param {number}  opts.maxFadeMs
  * @param {number}  opts.stepFadeMs
- * @param {string}  opts.shortcutUrl  where to go to get the PlaylistButtons shortcut
  * @param {Array}   opts.candidates   from buildCandidates()
  * @param {(id: string) => Array} opts.onToggleMember    returns the new candidate list
  * @param {(id: string) => Array} opts.onToggleNofadein  returns the new candidate list
@@ -233,7 +224,6 @@ export function renderSettings(root, {
   minFadeMs = 0,
   maxFadeMs = 10000,
   stepFadeMs = 250,
-  shortcutUrl = SHORTCUT_URL,
   candidates = [],
   onToggleMember = () => candidates,
   onToggleNofadein = () => candidates,
@@ -273,29 +263,10 @@ export function renderSettings(root, {
   fade.append(el('p', 'section-note', 'Used for the fade out and the fade in, for every playlist.'));
   page.append(fade);
 
-  // ---- Shortcut --------------------------------------------------------------------
-  // Above the rotation rather than below it: the rotation is a list of every playlist on
-  // the account and can run to hundreds of rows, so anything after it is unreachable in
-  // practice. This is also the one thing on the screen that has to be true before any of
-  // the rest of the app does anything at all.
-  const shortcut = el('section', 'settings-section');
-  const shortcutHead = el('div', 'section-head');
-  shortcutHead.append(el('h2', null, SHORTCUT_HEADING));
-  shortcut.append(shortcutHead);
-  shortcut.append(el('p', 'section-note', SHORTCUT_NOTE));
-  const shortcutLink = el('a', 'settings-link', SHORTCUT_LINK_TEXT);
-  shortcutLink.href = shortcutUrl;
-  // A new context, so a half-configured rotation is never lost to a navigation away —
-  // and `noopener` because the destination is off this origin.
-  shortcutLink.target = '_blank';
-  shortcutLink.rel = 'noopener noreferrer';
-  shortcut.append(shortcutLink);
-  page.append(shortcut);
-
-  // ---- Rotation (#8) + order (#3) + no fade (#6) + no shuffle (#10) -----------------
+  // ---- Buttons (#8) + order (#3) + no fade-in (#6) + no shuffle (#10) ---------------
   const rotation = el('section', 'settings-section');
   const rotHead = el('div', 'section-head');
-  rotHead.append(el('h2', null, 'Rotation'));
+  rotHead.append(el('h2', null, 'Buttons'));
   const count = el('span', 'rot-count');
   rotHead.append(count);
   rotation.append(rotHead);

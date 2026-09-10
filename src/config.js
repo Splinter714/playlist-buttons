@@ -38,16 +38,6 @@ export const REMOVED_SCOPES = [
   'playlist-modify-public',
 ];
 
-// Where someone goes to GET the PlaylistButtons shortcut. Without it installed under
-// exactly that name, every tile on the grid is a link to nowhere — so the app has to be
-// able to point at it rather than assuming whoever is holding the phone already knows.
-//
-// An iCloud share link, so it installs in one tap. It is a SIGNED SNAPSHOT of the
-// shortcut as it was when it was shared, not a live view of shortcut/build.mjs: rebuild
-// the shortcut and this link still hands out the old one until it is re-shared from the
-// Shortcuts app and the new URL put here.
-export const SHORTCUT_URL = 'https://www.icloud.com/shortcuts/1d4a520ced5743e38562607289ed7c14';
-
 export const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';
 export const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
 export const API_BASE = 'https://api.spotify.com/v1';

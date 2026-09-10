@@ -109,8 +109,8 @@ length and each playlist's two flags (`nofadein` and `inorder`) are set. One scr
 reached from the grid, no search box: a plain scrolling list of every playlist on the
 account, tapped to add or remove.
 
-That list is **sorted**: the rotation first, in button order, then everything else under
-an "everything else" divider. The sort is what makes the order draggable at all — a list
+That list is **sorted**: the rotation first, in button order, then the rest under an
+"other playlists" divider. The sort is what makes the order draggable at all — a list
 in account order would scatter button 3 forty rows away from button 4. Each member row
 carries a drag handle at its trailing edge, and a drag can only start there, so the row's
 own tap keeps meaning add-or-remove and nothing else. A drag can't push a row out of the
@@ -151,8 +151,8 @@ own, which is the whole point.
 One duration, used for both the fade out and the fade in, 3s by default, adjustable on
 the settings screen and stored in `localStorage` alongside the rotation. It's global —
 there's no per-playlist fade length. The per-playlist fade setting is `nofadein` — the
-**no fade** pill on the playlist's settings row — which means the new playlist starts at
-full volume instead of ramping (`upMs: 0`).
+**no fade-in** pill on the playlist's settings row — which means the new playlist starts
+at full volume instead of ramping (`upMs: 0`).
 
 ## Shuffle, and playing in order
 
@@ -164,12 +164,12 @@ to the app mid-run and there is no callback to reload it, so the app repaints on
 from a transition re-rolls every tile. A playlist can instead be marked
 `inorder` on the settings screen — the **no shuffle** pill — which starts it at track 1
 with shuffle off, the same way every time (#10). It's a second, independent pill beside
-**no fade**, not a combined control: a playlist can start loud, start at track 1, both or
+**no fade-in**, not a combined control: a playlist can start loud, start at track 1, both or
 neither.
 
-Both pills name the *exception* rather than the behaviour ("no fade", not "full volume";
-"no shuffle", not "in order"), so an unlit row reads as "nothing unusual about this one"
-at a glance down a list that is mostly unlit.
+Both pills name the *exception* rather than the behaviour ("no fade-in", not "full
+volume"; "no shuffle", not "in order"), so an unlit row reads as "nothing unusual about
+this one" at a glance down a list that is mostly unlit.
 
 ## Shortcut contract
 

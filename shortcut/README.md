@@ -39,12 +39,13 @@ Two things about that command are load-bearing:
 
 ## Install it on the phone
 
-The web app's settings screen links to a shared copy, which installs in one tap:
+A shared copy, which installs in one tap:
 <https://www.icloud.com/shortcuts/1d4a520ced5743e38562607289ed7c14>. That link is
 a **signed snapshot** of the shortcut as it was when it was shared — it does not
-track this generator. After changing `build.mjs`, rebuild, re-share from the
-Shortcuts app, and put the new URL in `SHORTCUT_URL` (`src/config.js`), or the
-app will keep handing people the old shortcut.
+track this generator, so after changing `build.mjs` it keeps handing out the old
+one until it is rebuilt and re-shared from the Shortcuts app. The web app does not
+link to it: the settings screen is for the rotation and the fade, and a link to an
+install that has to be kept in step by hand did not earn a section on it.
 
 To build and install it yourself:
 

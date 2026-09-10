@@ -11,11 +11,7 @@
 //     just the text that came out.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  renderSettings, sortForDisplay, FLAG_LABELS, REST_HEADING,
-  SHORTCUT_HEADING, SHORTCUT_NOTE, SHORTCUT_LINK_TEXT,
-} from '../src/settings-view.js';
-import { SHORTCUT_URL } from '../src/config.js';
+import { renderSettings, sortForDisplay, FLAG_LABELS, REST_HEADING } from '../src/settings-view.js';
 import {
   readRotation, writeRotation, buildCandidates, reorderRotation,
   addToRotation, removeFromRotation, isInRotation, toggleNofadein, toggleInorder,
@@ -88,34 +84,6 @@ describe('sortForDisplay', () => {
   });
 });
 
-describe('the link to the shortcut', () => {
-  const link = () => root.querySelector('.settings-link');
-
-  it('is on the screen even before anything is in the rotation', () => {
-    renderSettings(root, { loggedIn: false });
-    expect(link().textContent).toBe(SHORTCUT_LINK_TEXT);
-    expect(link().getAttribute('href')).toBe(SHORTCUT_URL);
-    expect(root.textContent).toContain(SHORTCUT_NOTE);
-  });
-
-  it('sits above the rotation, which can run to hundreds of rows', () => {
-    paint();
-    const headings = Array.from(root.querySelectorAll('h2')).map((h) => h.textContent);
-    expect(headings).toEqual(['Fade', SHORTCUT_HEADING, 'Rotation']);
-  });
-
-  it('opens away from the app, without handing the opener over', () => {
-    paint();
-    expect(link().target).toBe('_blank');
-    expect(link().rel).toContain('noopener');
-  });
-
-  it('can be pointed somewhere else without touching the view', () => {
-    renderSettings(root, { loggedIn: true, candidates: [], shortcutUrl: 'https://www.icloud.com/shortcuts/abc' });
-    expect(link().getAttribute('href')).toBe('https://www.icloud.com/shortcuts/abc');
-  });
-});
-
 describe('the list is sorted before anything is dragged', () => {
   it('lifts the rotation to the top, in button order, whatever order the account is in', () => {
     writeRotation([{ id: 'ddd' }, { id: 'bbb' }]);
@@ -133,6 +101,12 @@ describe('the list is sorted before anything is dragged', () => {
     writeRotation(account.map((p) => ({ id: p.id })));
     paint();
     expect(divider().hidden).toBe(true); // everything is a member
+  });
+
+  it('has just the two sections, with nothing between them', () => {
+    paint();
+    expect(Array.from(root.querySelectorAll('h2')).map((h) => h.textContent))
+      .toEqual(['Fade', 'Buttons']);
   });
 
   it('counts the buttons, not the playlists', () => {
@@ -169,9 +143,9 @@ describe('the two flag pills', () => {
   });
 
   it('names the exception rather than the behaviour', () => {
-    expect(FLAG_LABELS.map(([, label]) => label)).toEqual(['no fade', 'no shuffle']);
+    expect(FLAG_LABELS.map(([, label]) => label)).toEqual(['no fade-in', 'no shuffle']);
     const labels = Array.from(rowFor('aaa').querySelectorAll('.pl-flag')).map((b) => b.textContent);
-    expect(labels).toEqual(['no fade', 'no shuffle']);
+    expect(labels).toEqual(['no fade-in', 'no shuffle']);
   });
 
   it('toggles each flag independently, through the rotation', () => {
