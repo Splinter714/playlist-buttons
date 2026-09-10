@@ -71,6 +71,26 @@ describe('every tile is an anchor with its handoff href already in the DOM', () 
     expect(first).toEqual([4, 1]);
     expect(second).toEqual([36, 10]);
   });
+
+  it('marks an in-order playlist offset 0 / shuffle off, and leaves the others alone (#10)', () => {
+    const mixed = [items[0], { ...items[1], inorder: true }];
+    renderGrid(root, { items: mixed, linkOptions: { token: TOKEN, random: () => 0.5 } });
+    const [tavern, battle] = tiles().map(payloadOf);
+    expect(tavern).toMatchObject({ offset: 20, shuffle: true });
+    expect(battle).toMatchObject({ offset: 0, shuffle: false });
+  });
+
+  it('keeps re-rolling the shuffled tiles while an in-order tile stays on track 1', () => {
+    const mixed = [items[0], { ...items[1], inorder: true }];
+    const rolls = [0.1, 0.9];
+    let i = 0;
+    const linkOptions = { token: TOKEN, random: () => rolls[i++] };
+    renderGrid(root, { items: mixed, linkOptions });
+    expect(tiles().map((a) => payloadOf(a).offset)).toEqual([4, 0]);
+    renderGrid(root, { items: mixed, linkOptions });
+    // Only one roll was consumed by the first render — the in-order tile never asks.
+    expect(tiles().map((a) => payloadOf(a).offset)).toEqual([36, 0]);
+  });
 });
 
 describe('when there is no usable token', () => {

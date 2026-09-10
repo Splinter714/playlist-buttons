@@ -173,11 +173,25 @@
   line-height: 26px;
 }
 
-/* #6, on the member's own row. Off is an outline; on is filled, because "starts loud"
-   is the exceptional state and should look like one. */
-.pl-nofadein {
+/* The per-playlist flags — #6 "full volume" and #10 "in order" — on the member's own row.
+   Two independent pills, styled identically because neither is subordinate to the other.
+   They wrap onto a second line before they squeeze the name, which is what a long name on
+   a 375px screen needs. */
+.pl-flags {
   flex: 0 0 auto;
   align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 45%;
+}
+.pl-flags[hidden] { display: none; }
+
+/* Off is an outline; on is filled, because both flags are the exceptional state and
+   should look like one at a glance down the list. */
+.pl-flag {
+  flex: 0 0 auto;
   padding: 6px 10px;
   border: 1px solid #33333c;
   border-radius: 999px;
@@ -185,14 +199,14 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
-.pl-nofadein.is-on {
+.pl-flag.is-on {
   border-color: var(--accent);
   background: rgba(29, 185, 84, 0.16);
   color: var(--accent);
 }
-.pl-nofadein[hidden] { display: none; }
 
 /* The top bar: the only navigation there is. */
 #topbar {

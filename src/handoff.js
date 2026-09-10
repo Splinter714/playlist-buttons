@@ -3,7 +3,7 @@
 //   shortcuts://x-callback-url/run-shortcut
 //     ?name=PlaylistButtons
 //     &input=text
-//     &text=<urlencoded {token, context_uri, offset, downMs, upMs}>
+//     &text=<urlencoded {token, context_uri, offset, shuffle, downMs, upMs}>
 //     &x-success=<urlencoded app URL>
 //     &x-error=<urlencoded app URL + ?err=1>
 //
@@ -22,9 +22,10 @@
 //     render is all the re-randomising this needs. No extra machinery, and deliberately
 //     not rolled once at startup.
 //
-// The payload carries NO `shuffle` field: the shortcut hardcodes shuffle on for now.
-// #10 (play in order) will change this contract and has not had its question pass yet,
-// so nothing here is built against a guess at it.
+// The payload carries a `shuffle` boolean (#10). It used to be absent, because the
+// shortcut hardcoded `?state=true`; a playlist marked `inorder` needs shuffle explicitly
+// OFF and `offset: 0`, so the two travel together and the shortcut reads both from input.
+// Default behaviour is unchanged: random offset, shuffle on.
 
 import { getAccessTokenSync } from './auth.js';
 import { resolveFade } from './settings.js';
@@ -67,17 +68,23 @@ export function pickOffset(total, random = Math.random) {
  * The JSON the shortcut receives. Key order is the contract's order, so the encoded
  * string is stable and readable when debugging on the phone.
  *
- * @param {{uri: string, trackTotal?: number, nofadein?: boolean}} playlist
+ * @param {{uri: string, trackTotal?: number, nofadein?: boolean, inorder?: boolean}} playlist
  * @param {{token: string, fadeMs?: number, random?: () => number}} options
  */
 export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
   // `nofadein` is the one per-playlist fade setting (#6); resolveFade turns it into
   // `upMs: 0`, meaning restore to the captured volume instead of ramping.
   const { downMs, upMs } = resolveFade(playlist?.nofadein === true, fadeMs);
+  // `inorder` (#10) is the other, independent per-playlist flag. Track 1 with shuffle off
+  // is one decision expressed as two fields, so they are computed together: a random
+  // offset with shuffle off would play the rest of the playlist from a random point, and
+  // `offset: 0` with shuffle on would not start on track 1 at all.
+  const inorder = playlist?.inorder === true;
   return {
     token,
     context_uri: playlist?.uri,
-    offset: pickOffset(trackTotal(playlist), random),
+    offset: inorder ? 0 : pickOffset(trackTotal(playlist), random),
+    shuffle: !inorder,
     downMs,
     upMs,
   };

@@ -18,7 +18,7 @@ import { sessionScopesStale } from './scopes.js';
 import { readCache, hasCache, refreshPlaylists, clearCache, purgeLegacyStorage } from './playlists.js';
 import {
   readRotation, joinRotation, buildCandidates,
-  addToRotation, removeFromRotation, isInRotation, toggleNofadein,
+  addToRotation, removeFromRotation, isInRotation, toggleNofadein, toggleInorder,
 } from './rotation.js';
 import {
   readFadeMs, writeFadeMs, MIN_FADE_MS, MAX_FADE_MS, FADE_STEP_MS,
@@ -97,6 +97,11 @@ function paintSettings() {
     },
     onToggleNofadein: (id) => {
       toggleNofadein(id);
+      return afterRotationChange();
+    },
+    // #10, independent of nofadein: in order from track 1 with shuffle off.
+    onToggleInorder: (id) => {
+      toggleInorder(id);
       return afterRotationChange();
     },
     onFadeChange: (ms) => writeFadeMs(ms),

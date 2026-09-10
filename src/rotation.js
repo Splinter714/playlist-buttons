@@ -8,9 +8,17 @@
 //
 // Include-list polarity: nothing is in the rotation until it is added.
 //
-// Stored shape: an ORDERED array of `{id, nofadein}`. The array order IS the button
-// order — there is no `order:N` any more, so there is nothing to collide, renumber or
-// write back. Reordering is moving an array element (#3).
+// Stored shape: an ORDERED array of `{id, nofadein, inorder}`. The array order IS the
+// button order — there is no `order:N` any more, so there is nothing to collide, renumber
+// or write back. Reordering is moving an array element (#3).
+//
+// The two per-playlist flags are INDEPENDENT of each other, not one three-way setting:
+//   nofadein (#6)  — start at full volume instead of ramping in.
+//   inorder  (#10) — start at track 1 with shuffle off, instead of a random offset with
+//                    shuffle on. Always track 1; deliberately not "resume where it left
+//                    off", so a playlist opens the same way every time.
+// Both default to false, and an entry stored before a flag existed simply reads as false —
+// `normalize` decides that, so an old rotation never has to be migrated.
 
 import { read, write, remove } from './storage.js';
 
@@ -27,12 +35,12 @@ function normalize(value) {
     const id = typeof entry === 'string' ? entry : entry?.id;
     if (typeof id !== 'string' || !id || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, nofadein: entry?.nofadein === true });
+    out.push({ id, nofadein: entry?.nofadein === true, inorder: entry?.inorder === true });
   }
   return out;
 }
 
-/** @returns {Array<{id: string, nofadein: boolean}>} in button order. */
+/** @returns {Array<{id: string, nofadein: boolean, inorder: boolean}>} in button order. */
 export function readRotation() {
   return normalize(read(ROTATION_KEY, null));
 }
@@ -53,10 +61,10 @@ export function isInRotation(id, entries = readRotation()) {
 }
 
 /** Append to the end. Adding something already in the rotation is a no-op. */
-export function addToRotation(id, { nofadein = false } = {}) {
+export function addToRotation(id, { nofadein = false, inorder = false } = {}) {
   const entries = readRotation();
   if (typeof id !== 'string' || !id || isInRotation(id, entries)) return entries;
-  return writeRotation([...entries, { id, nofadein: nofadein === true }]);
+  return writeRotation([...entries, { id, nofadein: nofadein === true, inorder: inorder === true }]);
 }
 
 export function removeFromRotation(id) {
@@ -98,31 +106,47 @@ export function toggleNofadein(id) {
 }
 
 /**
+ * Per-playlist "play in order" override (#10). No-op for a playlist not in the rotation.
+ *
+ * Independent of `nofadein`: setting one never touches the other.
+ */
+export function setInorder(id, inorder) {
+  const entries = readRotation();
+  if (!isInRotation(id, entries)) return entries;
+  return writeRotation(entries.map((e) => (e.id === id ? { ...e, inorder: inorder === true } : e)));
+}
+
+export function toggleInorder(id) {
+  const entry = readRotation().find((e) => e.id === id);
+  return entry ? setInorder(id, !entry.inorder) : readRotation();
+}
+
+/**
  * Join the rotation against cached playlist metadata — this is what the grid renders.
  *
- * Rotation order wins; `nofadein` comes from the rotation, everything else (name, art,
- * uri, track count) from the cached `/me/playlists` result. A rotation entry with no
+ * Rotation order wins; `nofadein` and `inorder` come from the rotation, everything else
+ * (name, art, uri, track count) from the cached `/me/playlists` result. A rotation entry with no
  * metadata is dropped rather than drawn as a nameless tile: it means the playlist was
  * deleted or unfollowed, or the cache has not landed yet on a first load.
  *
- * @param {Array<{id: string, nofadein: boolean}>} entries
+ * @param {Array<{id: string, nofadein: boolean, inorder: boolean}>} entries
  * @param {Array<{id: string}>} playlists
  */
 /**
  * The settings screen's list (#8): every playlist on the account, each marked with whether
- * it is already in the rotation, where it sits, and its `nofadein` flag.
+ * it is already in the rotation, where it sits, and its `nofadein` / `inorder` flags.
  *
  * The opposite direction to joinRotation. That one starts from the rotation and drops
  * anything without metadata; this one starts from the candidate list and keeps everything,
  * because the whole point of the screen is showing what you could still add.
  *
  * @param {Array<{id: string}>} playlists the cached `/me/playlists` result
- * @param {Array<{id: string, nofadein: boolean}>} entries
+ * @param {Array<{id: string, nofadein: boolean, inorder: boolean}>} entries
  */
 export function buildCandidates(playlists, entries = readRotation()) {
   const byId = new Map();
   (Array.isArray(entries) ? entries : []).forEach((e, i) => {
-    if (e?.id) byId.set(e.id, { position: i + 1, nofadein: e.nofadein === true });
+    if (e?.id) byId.set(e.id, { position: i + 1, nofadein: e.nofadein === true, inorder: e.inorder === true });
   });
   const out = [];
   for (const p of Array.isArray(playlists) ? playlists : []) {
@@ -133,6 +157,7 @@ export function buildCandidates(playlists, entries = readRotation()) {
       inRotation: Boolean(member),
       position: member ? member.position : null,
       nofadein: member ? member.nofadein : false,
+      inorder: member ? member.inorder : false,
     });
   }
   return out;
@@ -144,7 +169,7 @@ export function joinRotation(entries, playlists) {
   for (const entry of Array.isArray(entries) ? entries : []) {
     const p = meta.get(entry?.id);
     if (!p) continue;
-    out.push({ ...p, nofadein: entry.nofadein === true });
+    out.push({ ...p, nofadein: entry.nofadein === true, inorder: entry.inorder === true });
   }
   return out;
 }

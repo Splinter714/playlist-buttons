@@ -299,10 +299,10 @@ comment(
 );
 
 // 1. Unpack the JSON the web app handed us.
-comment('Unpack input: token, context_uri, offset, downMs, upMs');
+comment('Unpack input: token, context_uri, offset, shuffle, downMs, upMs');
 getDictionaryFromInput();
 setVariable('input');
-for (const key of ['token', 'context_uri', 'offset', 'downMs', 'upMs']) {
+for (const key of ['token', 'context_uri', 'offset', 'shuffle', 'downMs', 'upMs']) {
   getVariable('input');
   getValueForKey(key);
   setVariable(key);
@@ -320,10 +320,13 @@ ramp({
   fractionParts: [varRef('V0'), ` * (${STEPS} - `, varRef('Repeat Index'), `) / ${STEPS}`],
 });
 
-// 4. Shuffle on, so the random offset lands in a shuffled queue.
-comment('Turn shuffle on');
+// 4. Shuffle, as the app asked for it (#10). Normally true, so the random offset lands
+//    in a shuffled queue; false for a playlist marked "in order", which also arrives with
+//    `offset: 0` so it starts on track 1. The app decides; this used to be hardcoded to
+//    `?state=true`.
+comment('Set shuffle from the input (true normally, false for an in-order playlist)');
 httpRequest({
-  url: `${API}/me/player/shuffle?state=true`,
+  url: tokenString(`${API}/me/player/shuffle?state=`, varRef('shuffle')),
   method: 'PUT',
   headers: authHeaders(),
 });

@@ -8,6 +8,9 @@
 //   Full volume (#6) — a per-member toggle living on that playlist's row, not in a
 //                   separate list and not behind a long-press (which would collide with
 //                   #3's drag).
+//   In order  (#10) — a SECOND, independent per-member toggle beside it. Two pills, not
+//                   one three-way control: a playlist can start loud, start at track 1,
+//                   both or neither.
 //
 // Deliberately not here: no search box, no per-playlist fade, no reordering, no export.
 // Each of those was asked about and declined.
@@ -59,22 +62,34 @@ function buildRow(candidate) {
   main.append(el('span', 'pl-badge'));
   li.append(main);
 
-  // Only rendered for members, but the row's height comes from the artwork, so a row
-  // gaining or losing this never changes the list's layout.
-  const toggle = el('button', 'pl-nofadein');
-  toggle.type = 'button';
-  toggle.dataset.action = 'nofadein';
-  toggle.textContent = 'full volume';
-  li.append(toggle);
+  // Only shown for members, but the row's height comes from the artwork, so a row gaining
+  // or losing these never changes the list's layout. Both pills are built the same way
+  // and sit side by side — the flags are independent, so neither is nested under the other.
+  const flags = el('span', 'pl-flags');
+  for (const [action, label] of [['nofadein', 'full volume'], ['inorder', 'in order']]) {
+    const toggle = el('button', `pl-flag pl-flag--${action}`);
+    toggle.type = 'button';
+    toggle.dataset.action = action;
+    toggle.textContent = label;
+    flags.append(toggle);
+  }
+  li.append(flags);
 
   return li;
+}
+
+/** One flag pill: pressed state, the tint that goes with it, and what a tap will do. */
+function applyFlag(toggle, on, label) {
+  toggle.setAttribute('aria-pressed', String(on === true));
+  toggle.classList.toggle('is-on', on === true);
+  toggle.setAttribute('aria-label', label);
 }
 
 function applyRow(li, candidate) {
   const main = li.querySelector('.pl-main');
   const meta = li.querySelector('.pl-meta');
   const badge = li.querySelector('.pl-badge');
-  const toggle = li.querySelector('.pl-nofadein');
+  const flags = li.querySelector('.pl-flags');
 
   li.classList.toggle('is-member', candidate.inRotation);
   main.setAttribute('aria-pressed', String(candidate.inRotation));
@@ -89,14 +104,20 @@ function applyRow(li, candidate) {
   meta.textContent = `${tracks} track${tracks === 1 ? '' : 's'}`;
   badge.textContent = candidate.inRotation ? String(candidate.position) : '+';
 
-  toggle.hidden = !candidate.inRotation;
-  toggle.setAttribute('aria-pressed', String(candidate.nofadein === true));
-  toggle.classList.toggle('is-on', candidate.nofadein === true);
-  toggle.setAttribute(
-    'aria-label',
+  flags.hidden = !candidate.inRotation;
+  applyFlag(
+    li.querySelector('.pl-flag--nofadein'),
+    candidate.nofadein,
     candidate.nofadein
       ? `${candidate.name} starts at full volume. Tap to fade it in instead.`
       : `${candidate.name} fades in. Tap to start it at full volume instead.`,
+  );
+  applyFlag(
+    li.querySelector('.pl-flag--inorder'),
+    candidate.inorder,
+    candidate.inorder
+      ? `${candidate.name} plays in order from track 1. Tap to shuffle it instead.`
+      : `${candidate.name} shuffles from a random track. Tap to play it in order instead.`,
   );
 }
 
@@ -112,6 +133,7 @@ function applyRow(li, candidate) {
  * @param {Array}   opts.candidates   from buildCandidates()
  * @param {(id: string) => Array} opts.onToggleMember    returns the new candidate list
  * @param {(id: string) => Array} opts.onToggleNofadein  returns the new candidate list
+ * @param {(id: string) => Array} opts.onToggleInorder   returns the new candidate list
  * @param {(ms: number) => void}  opts.onFadeChange
  * @param {() => void} opts.onLogin
  */
@@ -125,6 +147,7 @@ export function renderSettings(root, {
   candidates = [],
   onToggleMember = () => candidates,
   onToggleNofadein = () => candidates,
+  onToggleInorder = () => candidates,
   onFadeChange = () => {},
   onLogin = () => {},
 } = {}) {
@@ -158,7 +181,7 @@ export function renderSettings(root, {
   fade.append(el('p', 'section-note', 'Used for the fade out and the fade in, for every playlist.'));
   page.append(fade);
 
-  // ---- Rotation (#8) + full volume (#6) ---------------------------------------------
+  // ---- Rotation (#8) + full volume (#6) + in order (#10) ----------------------------
   const rotation = el('section', 'settings-section');
   const rotHead = el('div', 'section-head');
   rotHead.append(el('h2', null, 'Rotation'));
@@ -213,7 +236,9 @@ export function renderSettings(root, {
       if (!button || !list.contains(button)) return;
       const id = button.closest('.pl-row')?.dataset.id;
       if (!id) return;
-      refresh(button.dataset.action === 'nofadein' ? onToggleNofadein(id) : onToggleMember(id));
+      const handler = { nofadein: onToggleNofadein, inorder: onToggleInorder }[button.dataset.action]
+        ?? onToggleMember;
+      refresh(handler(id));
     });
 
     rotation.append(list);

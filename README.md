@@ -2,7 +2,8 @@
 
 A phone-first remote for switching between Spotify playlists with a volume fade
 across the transition. Built for tabletop sessions: tap a playlist's cover art,
-the current music fades out, the new playlist starts shuffled, and it fades back in.
+the current music fades out, the new playlist starts — shuffled, or in order from
+track 1 if it's marked that way — and it fades back in.
 
 ## Why it's shaped this way
 
@@ -54,19 +55,21 @@ One visible app switch per transition — Safari to Shortcuts and back via
 
 ## Membership and ordering
 
-Which playlists are in the rotation, what order they sit in, and which skip the
-fade-in all live in `localStorage`. The app never writes anything to Spotify — it only
-reads the playlist list.
+Which playlists are in the rotation, what order they sit in, which skip the fade-in and
+which play in order all live in `localStorage`. The app never writes anything to
+Spotify — it only reads the playlist list.
 
 ```js
-[{ id: '37i9…', nofadein: false }, { id: '4kQr…', nofadein: true }]
+[{ id: '37i9…', nofadein: false, inorder: false },
+ { id: '4kQr…', nofadein: true,  inorder: true }]
 ```
 
 The array order *is* the button order, so reordering is moving an element. It's an
 include list: nothing is in the rotation until it's added, from the settings screen —
 which is also the only way to take something off it, and where the fade length and each
-playlist's `nofadein` are set. One screen, reached from the grid, no search box: a plain
-scrolling list of every playlist on the account, tapped to add or remove.
+playlist's two flags (`nofadein` and `inorder`) are set. One screen, reached from the
+grid, no search box: a plain scrolling list of every playlist on the account, tapped to
+add or remove.
 
 This started out the other way round. Membership lived in the playlist description as
 a `[game order:3 nofadein]` tag, which was appealing because it's managed from the
@@ -93,8 +96,16 @@ own, which is the whole point.
 
 One duration, used for both the fade out and the fade in, 3s by default, adjustable on
 the settings screen and stored in `localStorage` alongside the rotation. It's global —
-there's no per-playlist fade length. The one per-playlist thing is `nofadein`, which
+there's no per-playlist fade length. The per-playlist fade setting is `nofadein`, which
 means the new playlist starts at full volume instead of ramping (`upMs: 0`).
+
+## Shuffle, and playing in order
+
+By default a playlist starts shuffled from a random track — the offset is re-rolled on
+every page load, and every transition reloads the page. A playlist can instead be marked
+`inorder` on the settings screen, which starts it at track 1 with shuffle off, the same
+way every time (#10). It's a second, independent pill beside `nofadein`, not a combined
+control: a playlist can start loud, start at track 1, both or neither.
 
 ## Shortcut contract
 
@@ -102,8 +113,11 @@ Receives JSON as input:
 
 ```json
 { "token": "...", "context_uri": "spotify:playlist:...", "offset": 47,
-  "downMs": 3000, "upMs": 3000 }
+  "shuffle": true, "downMs": 3000, "upMs": 3000 }
 ```
+
+`shuffle` and `offset` are decided together: normally `true` with a random offset, and
+for an `inorder` playlist `false` with `offset: 0`.
 
 `upMs: 0` means restore to full volume immediately instead of ramping. The restore
 happens *after* the play call returns, so the outgoing track never jumps back up.
@@ -124,6 +138,7 @@ change, rather than running on a token that can still edit playlists.
 ## v1
 
 Playlist buttons as cover art, drag to reorder, tap to transition, shuffle with a
-random start offset, per-playlist `nofadein`, 3s default fades adjustable in settings.
+random start offset, per-playlist `nofadein` and `inorder`, 3s default fades adjustable
+in settings.
 
 Not in v1: artwork upload from the app (`ugc-image-upload`), auto-rotation, mood groupings.

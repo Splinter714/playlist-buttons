@@ -45,12 +45,18 @@ describe('the handoff URL (#4) — what a tile actually points at', () => {
     expect(q.get('input')).toBe('text');
   });
 
-  it('carries exactly the five contract fields, and no `shuffle` (#10 owns that)', () => {
+  it('carries exactly the six contract fields the shortcut unpacks (#10 added shuffle)', () => {
     const payload = payloadOf(href());
     expect(Object.keys(payload).sort()).toEqual(
-      ['context_uri', 'downMs', 'offset', 'token', 'upMs'],
+      ['context_uri', 'downMs', 'offset', 'shuffle', 'token', 'upMs'],
     );
-    expect('shuffle' in payload).toBe(false);
+  });
+
+  it('carries the same six fields for an in-order playlist — one contract, not two', () => {
+    const payload = payloadOf(href({ ...tavern, inorder: true }));
+    expect(Object.keys(payload).sort()).toEqual(
+      ['context_uri', 'downMs', 'offset', 'shuffle', 'token', 'upMs'],
+    );
   });
 
   it('passes the playlist URI and the token through untouched', () => {
@@ -106,6 +112,45 @@ describe('fade values come from settings and the playlist (#5/#6)', () => {
     const payload = payloadOf(href({ ...tavern, nofadein: true }));
     expect(payload.downMs).toBe(2000);
     expect(payload.upMs).toBe(0);
+  });
+});
+
+describe('shuffle and the start offset (#10)', () => {
+  it('shuffles from a random offset by default — nothing about this changed', () => {
+    const payload = payloadOf(href(tavern, { random: () => 0.5 }));
+    expect(payload.shuffle).toBe(true);
+    expect(payload.offset).toBe(60);
+  });
+
+  it('sends offset 0 and shuffle false for an in-order playlist', () => {
+    const payload = payloadOf(href({ ...tavern, inorder: true }, { random: () => 0.5 }));
+    expect(payload.offset).toBe(0);
+    expect(payload.shuffle).toBe(false);
+  });
+
+  it('starts at track 1 however the random source rolls — the roll is not used at all', () => {
+    for (const r of [0, 0.5, 0.999]) {
+      expect(payloadOf(href({ ...tavern, inorder: true }, { random: () => r })).offset).toBe(0);
+    }
+  });
+
+  it('treats a missing or junk inorder as the default, so an old entry shuffles', () => {
+    for (const inorder of [undefined, null, false, 'yes', 0, 1]) {
+      const payload = payloadOf(href({ ...tavern, inorder }, { random: () => 0.5 }));
+      expect(payload.shuffle).toBe(true);
+      expect(payload.offset).toBe(60);
+    }
+  });
+
+  it('is independent of nofadein — in order can still fade in, and vice versa', () => {
+    const both = payloadOf(href({ ...tavern, inorder: true, nofadein: true }));
+    expect(both).toMatchObject({ offset: 0, shuffle: false, upMs: 0 });
+
+    const inOrderOnly = payloadOf(href({ ...tavern, inorder: true, nofadein: false }));
+    expect(inOrderOnly).toMatchObject({ offset: 0, shuffle: false, upMs: 3000 });
+
+    const loudOnly = payloadOf(href({ ...tavern, inorder: false, nofadein: true }));
+    expect(loudOnly).toMatchObject({ shuffle: true, upMs: 0 });
   });
 });
 
@@ -201,7 +246,10 @@ describe('coming back from a failed run (?err=1)', () => {
 
 describe('buildHandoffUrl / buildHandoffPayload directly', () => {
   it('round-trips a hand-built payload', () => {
-    const payload = { token: 't', context_uri: 'spotify:playlist:x', offset: 3, downMs: 3000, upMs: 0 };
+    const payload = {
+      token: 't', context_uri: 'spotify:playlist:x', offset: 3, shuffle: true,
+      downMs: 3000, upMs: 0,
+    };
     expect(payloadOf(buildHandoffUrl(payload, RETURN))).toEqual(payload);
   });
 
@@ -210,6 +258,20 @@ describe('buildHandoffUrl / buildHandoffPayload directly', () => {
       token: 't',
       context_uri: 'spotify:playlist:4kQrPlaylistId',
       offset: 0,
+      shuffle: true,
+      downMs: 1000,
+      upMs: 1000,
+    });
+  });
+
+  it('builds the in-order payload the same way, with shuffle off', () => {
+    expect(buildHandoffPayload({ ...tavern, inorder: true }, {
+      token: 't', fadeMs: 1000, random: () => 0.9,
+    })).toEqual({
+      token: 't',
+      context_uri: 'spotify:playlist:4kQrPlaylistId',
+      offset: 0,
+      shuffle: false,
       downMs: 1000,
       upMs: 1000,
     });

@@ -12,7 +12,8 @@ globalThis.localStorage = {
 const {
   readRotation, writeRotation, clearRotation, isInRotation,
   addToRotation, removeFromRotation, reorderRotation,
-  setNofadein, toggleNofadein, joinRotation, buildCandidates, ROTATION_KEY,
+  setNofadein, toggleNofadein, setInorder, toggleInorder,
+  joinRotation, buildCandidates, ROTATION_KEY,
 } = await import('../src/rotation.js');
 
 const ids = (list = readRotation()) => list.map((e) => e.id);
@@ -40,14 +41,19 @@ describe('an empty rotation — include-list polarity', () => {
 });
 
 describe('add', () => {
-  it('adds a playlist with fade-in on by default', () => {
+  it('adds a playlist with fade-in on and shuffle on by default', () => {
     addToRotation('tavern');
-    expect(readRotation()).toEqual([{ id: 'tavern', nofadein: false }]);
+    expect(readRotation()).toEqual([{ id: 'tavern', nofadein: false, inorder: false }]);
   });
 
   it('adds with nofadein set', () => {
     addToRotation('battle', { nofadein: true });
-    expect(readRotation()).toEqual([{ id: 'battle', nofadein: true }]);
+    expect(readRotation()).toEqual([{ id: 'battle', nofadein: true, inorder: false }]);
+  });
+
+  it('adds with inorder set, and the two flags do not imply each other (#10)', () => {
+    addToRotation('travel', { inorder: true });
+    expect(readRotation()).toEqual([{ id: 'travel', nofadein: false, inorder: true }]);
   });
 
   it('appends to the end, so the order is the order things were added', () => {
@@ -58,9 +64,9 @@ describe('add', () => {
   });
 
   it('is a no-op for something already in the rotation', () => {
-    addToRotation('tavern', { nofadein: true });
+    addToRotation('tavern', { nofadein: true, inorder: true });
     addToRotation('tavern');
-    expect(readRotation()).toEqual([{ id: 'tavern', nofadein: true }]);
+    expect(readRotation()).toEqual([{ id: 'tavern', nofadein: true, inorder: true }]);
   });
 
   it('refuses an empty or non-string id', () => {
@@ -93,15 +99,17 @@ describe('remove', () => {
 
   it('leaves nothing behind that a re-add would inherit', () => {
     setNofadein('b', true);
+    setInorder('b', true);
     removeFromRotation('b');
     addToRotation('b');
-    expect(readRotation().find((e) => e.id === 'b')).toEqual({ id: 'b', nofadein: false });
+    expect(readRotation().find((e) => e.id === 'b'))
+      .toEqual({ id: 'b', nofadein: false, inorder: false });
   });
 });
 
 describe('reorder', () => {
   beforeEach(() => {
-    writeRotation([{ id: 'a' }, { id: 'b', nofadein: true }, { id: 'c' }]);
+    writeRotation([{ id: 'a' }, { id: 'b', nofadein: true, inorder: true }, { id: 'c' }]);
   });
 
   it('reorders to match the ids it is given', () => {
@@ -109,9 +117,9 @@ describe('reorder', () => {
     expect(ids()).toEqual(['c', 'a', 'b']);
   });
 
-  it('carries each playlist nofadein along with it', () => {
+  it('carries each playlist flags along with it', () => {
     reorderRotation(['b', 'c', 'a']);
-    expect(readRotation()[0]).toEqual({ id: 'b', nofadein: true });
+    expect(readRotation()[0]).toEqual({ id: 'b', nofadein: true, inorder: true });
   });
 
   it('appends anything the list forgot rather than dropping it', () => {
@@ -142,7 +150,10 @@ describe('nofadein', () => {
 
   it('sets the flag on one playlist only', () => {
     setNofadein('a', true);
-    expect(readRotation()).toEqual([{ id: 'a', nofadein: true }, { id: 'b', nofadein: false }]);
+    expect(readRotation()).toEqual([
+      { id: 'a', nofadein: true, inorder: false },
+      { id: 'b', nofadein: false, inorder: false },
+    ]);
   });
 
   it('clears it again', () => {
@@ -165,26 +176,122 @@ describe('nofadein', () => {
 
   it('does nothing for a playlist that is not in the rotation', () => {
     setNofadein('ghost', true);
-    expect(readRotation()).toEqual([{ id: 'a', nofadein: false }, { id: 'b', nofadein: false }]);
+    expect(readRotation()).toEqual([
+      { id: 'a', nofadein: false, inorder: false },
+      { id: 'b', nofadein: false, inorder: false },
+    ]);
+  });
+});
+
+describe('inorder (#10) — play from track 1 with shuffle off', () => {
+  beforeEach(() => {
+    writeRotation([{ id: 'a' }, { id: 'b' }]);
+  });
+
+  it('is off by default, so nothing about the default behaviour changes', () => {
+    expect(readRotation().every((e) => e.inorder === false)).toBe(true);
+  });
+
+  it('sets the flag on one playlist only', () => {
+    setInorder('a', true);
+    expect(readRotation()).toEqual([
+      { id: 'a', nofadein: false, inorder: true },
+      { id: 'b', nofadein: false, inorder: false },
+    ]);
+  });
+
+  it('clears it again', () => {
+    setInorder('a', true);
+    setInorder('a', false);
+    expect(readRotation()[0].inorder).toBe(false);
+  });
+
+  it('toggles', () => {
+    toggleInorder('b');
+    expect(readRotation()[1].inorder).toBe(true);
+    toggleInorder('b');
+    expect(readRotation()[1].inorder).toBe(false);
+  });
+
+  it('does not change the order', () => {
+    setInorder('b', true);
+    expect(ids()).toEqual(['a', 'b']);
+  });
+
+  it('does nothing for a playlist that is not in the rotation', () => {
+    setInorder('ghost', true);
+    expect(readRotation()).toEqual([
+      { id: 'a', nofadein: false, inorder: false },
+      { id: 'b', nofadein: false, inorder: false },
+    ]);
+  });
+
+  it('is independent of nofadein in both directions — four combinations, all reachable', () => {
+    setInorder('a', true);
+    expect(readRotation()[0]).toEqual({ id: 'a', nofadein: false, inorder: true });
+    setNofadein('a', true);
+    expect(readRotation()[0]).toEqual({ id: 'a', nofadein: true, inorder: true });
+    setInorder('a', false);
+    expect(readRotation()[0]).toEqual({ id: 'a', nofadein: true, inorder: false });
+    setNofadein('a', false);
+    expect(readRotation()[0]).toEqual({ id: 'a', nofadein: false, inorder: false });
+  });
+});
+
+describe('a rotation stored before inorder existed (#10)', () => {
+  // The field was added to entries that were already on disk, so the read path — not a
+  // migration — is what has to cope. An old entry is simply one with no `inorder` key.
+  it('reads an old entry as not-in-order, which is the old behaviour', () => {
+    localStorage.setItem(`pb.${ROTATION_KEY}`, JSON.stringify([
+      { id: 'tavern', nofadein: false },
+      { id: 'battle', nofadein: true },
+    ]));
+    expect(readRotation()).toEqual([
+      { id: 'tavern', nofadein: false, inorder: false },
+      { id: 'battle', nofadein: true, inorder: false },
+    ]);
+  });
+
+  it('keeps the nofadein an old entry already had', () => {
+    localStorage.setItem(`pb.${ROTATION_KEY}`, JSON.stringify([{ id: 'battle', nofadein: true }]));
+    expect(readRotation()[0].nofadein).toBe(true);
+  });
+
+  it('lets an old entry be toggled in order without touching the rest', () => {
+    localStorage.setItem(`pb.${ROTATION_KEY}`, JSON.stringify([
+      { id: 'tavern', nofadein: false },
+      { id: 'battle', nofadein: true },
+    ]));
+    toggleInorder('battle');
+    expect(readRotation()).toEqual([
+      { id: 'tavern', nofadein: false, inorder: false },
+      { id: 'battle', nofadein: true, inorder: true },
+    ]);
+  });
+
+  it('ignores a junk value in the field rather than trusting it', () => {
+    localStorage.setItem(`pb.${ROTATION_KEY}`, JSON.stringify([{ id: 'tavern', inorder: 'yes' }]));
+    expect(readRotation()[0].inorder).toBe(false);
   });
 });
 
 describe('across a reload — the whole reason this is in localStorage (#4)', () => {
-  it('keeps membership, order and nofadein when the module is loaded fresh', async () => {
+  it('keeps membership, order and both flags when the module is loaded fresh', async () => {
     addToRotation('tavern');
     addToRotation('battle');
     addToRotation('travel');
     reorderRotation(['travel', 'tavern', 'battle']);
     setNofadein('tavern', true);
+    setInorder('battle', true);
 
     // A fresh module instance reading the same storage is what a page reload is: the
     // rotation holds nothing in memory, so everything has to come back off the disk.
     vi.resetModules();
     const reloaded = await import('../src/rotation.js');
     expect(reloaded.readRotation()).toEqual([
-      { id: 'travel', nofadein: false },
-      { id: 'tavern', nofadein: true },
-      { id: 'battle', nofadein: false },
+      { id: 'travel', nofadein: false, inorder: false },
+      { id: 'tavern', nofadein: true, inorder: false },
+      { id: 'battle', nofadein: false, inorder: true },
     ]);
   });
 
@@ -207,9 +314,17 @@ describe('joinRotation — rotation order over cached metadata', () => {
     expect(out.map((p) => p.id)).toEqual(['travel', 'battle']);
   });
 
-  it('takes name and art from the cache and nofadein from the rotation', () => {
-    const [p] = joinRotation([{ id: 'tavern', nofadein: true }], meta);
-    expect(p).toEqual({ id: 'tavern', name: 'Tavern', image: 't.jpg', trackTotal: 47, nofadein: true });
+  it('takes name and art from the cache and both flags from the rotation', () => {
+    const [p] = joinRotation([{ id: 'tavern', nofadein: true, inorder: true }], meta);
+    expect(p).toEqual({
+      id: 'tavern', name: 'Tavern', image: 't.jpg', trackTotal: 47,
+      nofadein: true, inorder: true,
+    });
+  });
+
+  it('gives a playlist with no inorder stored the default, so handoff.js reads false', () => {
+    const [p] = joinRotation([{ id: 'battle' }], meta);
+    expect(p.inorder).toBe(false);
   });
 
   it('drops a rotation entry with no metadata — deleted, unfollowed, or cache not landed', () => {
@@ -276,6 +391,14 @@ describe('buildCandidates — the settings screen list (#8)', () => {
     expect(flags).toEqual({ battle: true, tavern: false, travel: false });
   });
 
+  it('carries each member inorder flag through, separately from nofadein (#10)', () => {
+    writeRotation([{ id: 'battle', nofadein: true }, { id: 'tavern', inorder: true }]);
+    const rows = Object.fromEntries(
+      buildCandidates(meta).map((c) => [c.id, [c.nofadein, c.inorder]]),
+    );
+    expect(rows).toEqual({ battle: [true, false], tavern: [false, true], travel: [false, false] });
+  });
+
   it('carries the metadata the rows draw with', () => {
     writeRotation([]);
     const [battle] = buildCandidates(meta);
@@ -338,9 +461,33 @@ describe('what the settings screen actually does to the rotation', () => {
     toggleNofadein('b');
     expect(buildCandidates(meta).find((c) => c.id === 'b').nofadein).toBe(true);
     // Re-read from storage, exactly as the next page load does.
-    expect(readRotation()).toEqual([{ id: 'b', nofadein: true }]);
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: true, inorder: false }]);
     toggleNofadein('b');
-    expect(readRotation()).toEqual([{ id: 'b', nofadein: false }]);
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: false, inorder: false }]);
+  });
+
+  it('the in-order toggle round-trips through storage (#10)', () => {
+    addToRotation('b');
+    expect(buildCandidates(meta).find((c) => c.id === 'b').inorder).toBe(false);
+    toggleInorder('b');
+    expect(buildCandidates(meta).find((c) => c.id === 'b').inorder).toBe(true);
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: false, inorder: true }]);
+    toggleInorder('b');
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: false, inorder: false }]);
+  });
+
+  it('the in-order toggle does nothing for a playlist that is not a member', () => {
+    toggleInorder('b');
+    expect(readRotation()).toEqual([]);
+  });
+
+  it('the two toggles do not disturb each other on the same row', () => {
+    addToRotation('b');
+    toggleNofadein('b');
+    toggleInorder('b');
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: true, inorder: true }]);
+    toggleNofadein('b');
+    expect(readRotation()).toEqual([{ id: 'b', nofadein: false, inorder: true }]);
   });
 
   it('the full-volume toggle does nothing for a playlist that is not a member', () => {
@@ -352,9 +499,9 @@ describe('what the settings screen actually does to the rotation', () => {
     for (const id of ['a', 'b', 'c']) addToRotation(id);
     toggleNofadein('b');
     expect(readRotation()).toEqual([
-      { id: 'a', nofadein: false },
-      { id: 'b', nofadein: true },
-      { id: 'c', nofadein: false },
+      { id: 'a', nofadein: false, inorder: false },
+      { id: 'b', nofadein: true, inorder: false },
+      { id: 'c', nofadein: false, inorder: false },
     ]);
   });
 });

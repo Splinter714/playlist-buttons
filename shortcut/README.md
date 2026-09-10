@@ -5,7 +5,7 @@ thing iOS won't let a web page do: change system volume. The shortcut fades the
 volume down, switches playlist through the Spotify Web API, and fades back up.
 
 This directory generates that shortcut from source, so tuning the fade means
-editing a number in `build.mjs` and rebuilding — not dragging 67 actions around
+editing a number in `build.mjs` and rebuilding — not dragging 70 actions around
 on a phone screen.
 
 ## Build
@@ -63,15 +63,17 @@ from here.
 
 ## What it actually does
 
-67 actions, in order:
+70 actions, in order:
 
 1. Get Dictionary from Input, and pull out `token`, `context_uri`, `offset`,
-   `downMs`, `upMs`.
+   `shuffle`, `downMs`, `upMs`.
 2. Get Device Details → Current Volume, saved as `V0`. Every ramp is a fraction
    of `V0`, so starting at 60% fades from 60% rather than jumping to 100% first.
 3. Fade out: repeat `STEPS` times, setting volume to `V0 × (STEPS − Repeat Index) / STEPS`
    and waiting `downMs / STEPS / 1000` seconds.
-4. `PUT /v1/me/player/shuffle?state=true`.
+4. `PUT /v1/me/player/shuffle?state=<shuffle>` — the value comes from the input,
+   not from here. It is `true` for an ordinary playlist and `false` for one
+   marked "in order" in settings, which also arrives with `offset: 0` (#10).
 5. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
 6. If that failed, `GET /v1/me/player/devices`, take the first device, and retry
    the play call against it.
@@ -168,6 +170,15 @@ the dyld shared cache), so these four could not be verified locally:
 
 Two smaller ones:
 
+- **The `shuffle` boolean interpolated into the URL.** The input JSON carries
+  `shuffle` as a real boolean, and the URL is built as
+  `…/shuffle?state=` + the `shuffle` variable, so this relies on Shortcuts
+  rendering a dictionary boolean into text as `true` / `false`. If it renders
+  `1` / `0` instead, Spotify rejects the call with a 400 and — because the
+  shuffle call's result is not checked — the symptom is subtle: playback still
+  starts, but shuffle stays however it was last left, so an "in order" playlist
+  shuffles anyway. Fix by having the web app send the string `"true"`/`"false"`
+  in `handoff.js` instead of a boolean.
 - **`WFItemType: 3` for `offset.position`.** If Spotify gets `"position": "47"`
   as a string rather than a number it may reject the play call with a 400. The
   symptom is the alert firing on every tap with a message about a malformed
