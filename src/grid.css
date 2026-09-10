@@ -83,6 +83,10 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+  /* The clamp alone let a sliver of a third line show inside the pill's bottom
+     padding, since overflow clips at the padding edge rather than the content edge.
+     Pinning the content box to exactly two lines removes it. */
+  max-height: calc(1.25em * 2);
 }
 
 /* Now playing: a ring plus a dot. Two cues, because a ring alone is easy to miss at a
