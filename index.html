@@ -2,16 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>playlist-buttons — debug</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0c0c0e" />
+    <title>playlist buttons</title>
   </head>
   <body>
-    <!-- Deliberately plain. The real button grid is issue #2; this is just enough
-         to confirm auth and tag parsing by eye. -->
-    <h1>playlist-buttons (debug view)</h1>
-    <div id="auth"></div>
-    <div id="status"></div>
-    <div id="playlists"></div>
+    <!-- The button grid (issue #2). -->
+    <main id="app"></main>
+    <div id="app-status"></div>
+
+    <!-- The debug view from issue #1 — still how auth and tag parsing get verified by
+         eye, so it stays reachable even though the grid is now the main view. -->
+    <div id="debug-bar">
+      <button id="debug-toggle" type="button" aria-expanded="false" aria-controls="debug">debug view</button>
+    </div>
+    <section id="debug" hidden>
+      <h1>playlist-buttons (debug view)</h1>
+      <div id="auth"></div>
+      <div id="status"></div>
+      <div id="playlists"></div>
+    </section>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

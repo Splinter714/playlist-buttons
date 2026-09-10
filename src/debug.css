@@ -1,11 +1,20 @@
-/* Debug view styling, kept intentionally plain — the real UI is issue #2. */
-body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 16px; }
-h1 { font-size: 16px; }
-table { border-collapse: collapse; margin-top: 12px; }
-th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; vertical-align: top; }
-th { background: #eee; }
-td:last-child { max-width: 40em; word-break: break-word; }
+/* Debug view styling (#1), kept intentionally plain. Now scoped under #debug so it
+   cannot fight the grid's styles — the grid is the main view since #2. */
+#debug {
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0 10px 24px;
+  padding: 12px;
+  background: #fff;
+  color: #111;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+#debug h1 { font-size: 14px; margin: 0 0 8px; }
+#debug table { border-collapse: collapse; margin-top: 12px; }
+#debug th, #debug td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; vertical-align: top; }
+#debug th { background: #eee; }
+#debug td:last-child { max-width: 40em; word-break: break-word; }
 #status { margin: 8px 0; }
 #status.error { color: #b00; }
-.hint { color: #666; margin-top: 6px; }
-.warnings { color: #a60; margin-top: 12px; }
+#debug .hint { color: #666; margin-top: 6px; }
+#debug .warnings { color: #a60; margin-top: 12px; }

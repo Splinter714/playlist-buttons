@@ -20,6 +20,18 @@ export function readCache() {
   return cached.items;
 }
 
+/**
+ * Whether a cache entry exists at all — distinct from it being empty.
+ *
+ * The grid needs the difference: no cache means a genuine first load and earns the
+ * skeleton tiles, while a cache holding zero playlists is a real answer ("nothing is
+ * tagged") and must paint that message immediately instead (#2).
+ */
+export function hasCache() {
+  const cached = read(CACHE_KEY, null);
+  return Boolean(cached && cached.version === CACHE_VERSION && Array.isArray(cached.items));
+}
+
 export function writeCache(items) {
   write(CACHE_KEY, { version: CACHE_VERSION, updatedAt: Date.now(), items });
 }

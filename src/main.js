@@ -1,122 +1,124 @@
-// DEBUG VIEW ONLY.
+// Entry point. The button grid (#2) is the main view; the debug table from #1 sits
+// behind a toggle underneath it.
 //
-// The real button grid — cover art, drag to reorder, tap to transition — is issue #2.
-// This is a plain list, kept ugly on purpose so nobody mistakes it for the product. It
-// exists to answer two questions by eye: did auth work, and did the tag parse right.
+// Cache-first is a hard requirement, not an optimisation: every transition reloads the
+// page (#4), so the grid paints from localStorage before anything touches the network.
 
+import './grid.css';
 import './debug.css';
-import { beginLogin, handleRedirect, isLoggedIn, logout, getAuth, startRefreshTimer } from './auth.js';
-import { readCache, refreshPlaylists, clearCache } from './playlists.js';
-import { resolveRedirectUri } from './config.js';
 
-const authEl = document.getElementById('auth');
-const statusEl = document.getElementById('status');
-const listEl = document.getElementById('playlists');
+import { beginLogin, handleRedirect, isLoggedIn, startRefreshTimer } from './auth.js';
+import { readCache, hasCache, refreshPlaylists } from './playlists.js';
+import { resolveView } from './view.js';
+import { renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTriggerRecorder } from './grid.js';
+import { readNowPlaying, resolveNowPlaying } from './nowplaying.js';
+import { renderDebugAuth, renderDebugPlaylists, setDebugStatus, initDebugToggle } from './debug.js';
+
+const appEl = document.getElementById('app');
+const appStatusEl = document.getElementById('app-status');
 
 const warnings = [];
 
-function setStatus(text, kind = '') {
-  statusEl.textContent = text;
-  statusEl.className = kind;
+const state = {
+  items: [],
+  // A cache entry existing at all is what separates a genuine first load (skeleton)
+  // from an established one (never a skeleton).
+  cachePresent: false,
+  // A refresh has come back, successfully or not.
+  settled: false,
+};
+
+function setAppStatus(text = '', kind = '') {
+  if (!appStatusEl) return;
+  appStatusEl.textContent = text;
+  appStatusEl.className = kind;
 }
 
-function renderAuth() {
-  authEl.innerHTML = '';
-  if (isLoggedIn()) {
-    const auth = getAuth();
-    const info = document.createElement('span');
-    const mins = Math.round(((auth?.expires_at ?? 0) - Date.now()) / 60000);
-    info.textContent = `logged in — token expires in ${mins} min `;
-    const out = document.createElement('button');
-    out.textContent = 'log out';
-    out.onclick = () => { logout(); clearCache(); location.reload(); };
-    authEl.append(info, out);
+function paint() {
+  const view = resolveView({
+    loggedIn: isLoggedIn(),
+    cachePresent: state.cachePresent,
+    settled: state.settled,
+    items: state.items,
+  });
+
+  if (view === 'grid') {
+    renderGrid(appEl, {
+      items: state.items,
+      nowPlayingId: resolveNowPlaying(state.items, readNowPlaying()),
+    });
+  } else if (view === 'skeleton') {
+    renderSkeleton(appEl);
+  } else if (view === 'empty') {
+    renderEmpty(appEl);
   } else {
-    const inBtn = document.createElement('button');
-    inBtn.textContent = 'log in with Spotify';
-    inBtn.onclick = () => beginLogin();
-    const hint = document.createElement('div');
-    hint.className = 'hint';
-    hint.textContent = `redirect URI in use: ${resolveRedirectUri()} — this must be registered on the Spotify app, exactly.`;
-    authEl.append(inBtn, hint);
+    renderSignedOut(appEl, () => beginLogin());
   }
 }
 
-function renderPlaylists(items) {
-  listEl.innerHTML = '';
-
-  if (!items.length) {
-    const empty = document.createElement('p');
-    empty.textContent = 'No playlists with a [game ...] tag in their description yet.';
-    listEl.append(empty);
-  } else {
-    const table = document.createElement('table');
-    const head = document.createElement('tr');
-    for (const h of ['order', 'name', 'nofadein', 'tracks', 'description as Spotify returned it']) {
-      const th = document.createElement('th');
-      th.textContent = h;
-      head.append(th);
-    }
-    table.append(head);
-
-    for (const p of items) {
-      const tr = document.createElement('tr');
-      const cells = [
-        p.order === null || p.order === undefined ? '(none)' : String(p.order),
-        p.name,
-        p.nofadein ? 'yes' : 'no',
-        String(p.trackTotal ?? ''),
-        p.description ?? '',
-      ];
-      for (const c of cells) {
-        const td = document.createElement('td');
-        td.textContent = c;
-        tr.append(td);
-      }
-      table.append(tr);
-    }
-    listEl.append(table);
-  }
-
-  if (warnings.length) {
-    const box = document.createElement('ul');
-    box.className = 'warnings';
-    for (const w of warnings) {
-      const li = document.createElement('li');
-      li.textContent = w;
-      box.append(li);
-    }
-    listEl.append(box);
-  }
+function update(items) {
+  state.items = items;
+  paint();
+  renderDebugPlaylists(items, warnings);
 }
 
 async function main() {
-  const redirect = await handleRedirect();
-  if (redirect.error) setStatus(`login failed: ${redirect.error}`, 'error');
+  initDebugToggle();
 
-  renderAuth();
+  // One delegated listener for the life of the page: the grid re-renders, this does not.
+  // It records the tap and returns — the anchor's own navigation does the rest (#4).
+  attachTriggerRecorder(appEl);
+
+  const redirect = await handleRedirect();
+  if (redirect.error) {
+    setAppStatus(`login failed: ${redirect.error}`, 'error');
+    setDebugStatus(`login failed: ${redirect.error}`, 'error');
+  }
+
+  renderDebugAuth();
 
   if (!isLoggedIn()) {
-    setStatus('not logged in');
+    setDebugStatus('not logged in');
+    paint();
     return;
   }
 
-  startRefreshTimer((e) => setStatus(`token refresh failed: ${e.message}`, 'error'));
+  startRefreshTimer((e) => {
+    setAppStatus(`token refresh failed: ${e.message}`, 'error');
+    setDebugStatus(`token refresh failed: ${e.message}`, 'error');
+  });
 
   // Paint from cache first, always. Never block on the network.
-  const cached = readCache();
-  renderPlaylists(cached);
-  setStatus(cached.length ? `${cached.length} from cache — revalidating…` : 'loading…');
+  state.cachePresent = hasCache();
+  update(readCache());
+  setDebugStatus(state.items.length ? `${state.items.length} from cache — revalidating…` : 'loading…');
 
   try {
     const fresh = await refreshPlaylists({
-      onUpdate: renderPlaylists,
+      onUpdate: update,
       onWarn: (msg) => { warnings.push(msg); },
     });
-    setStatus(`${fresh.length} tagged playlist${fresh.length === 1 ? '' : 's'}`);
-    renderPlaylists(fresh);
+    state.settled = true;
+    state.cachePresent = true;
+    update(fresh);
+    setAppStatus('');
+    setDebugStatus(`${fresh.length} tagged playlist${fresh.length === 1 ? '' : 's'}`);
   } catch (e) {
-    setStatus(`refresh failed: ${e.message}${cached.length ? ' (showing cache)' : ''}`, 'error');
+    // A failed revalidation is not a failed load — whatever the cache had stays on
+    // screen. Only a first-ever load has nothing to fall back to.
+    state.settled = true;
+    paint();
+    if (!isLoggedIn()) {
+      // The session was rejected and cleared out from under us, so the sign-in prompt
+      // is already on screen — saying "showing cached playlists" here would describe a
+      // grid that is no longer there.
+      setAppStatus('Spotify session expired', 'error');
+      renderDebugAuth(); // it was drawn as logged-in a moment ago; keep it honest
+    } else {
+      const suffix = state.items.length ? ' (showing cached playlists)' : '';
+      setAppStatus(`could not reach Spotify${suffix}`, 'error');
+    }
+    setDebugStatus(`refresh failed: ${e.message}${state.items.length ? ' (showing cache)' : ''}`, 'error');
   }
 }
 
