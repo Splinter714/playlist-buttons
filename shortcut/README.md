@@ -162,13 +162,18 @@ rather than on whatever tab happens to be frontmost, at the cost of navigating
 that tab, which reloads it. Worth switching to if Safari comes forward on the
 wrong tab.
 
-Not reloading costs nothing, incidentally: `x-success` fires at the end of the
-run and reloads anyway, and that is what re-rolls each tile's random offset.
+Not reloading costs nothing, but not for the reason it first appeared to: the app
+repaints itself when it comes back to the front, which is what re-rolls each
+tile's random offset. It is emphatically not because `x-success` reloads at the
+end of the run — see below, it does not.
 
-`x-success` is still sent and still fires at the end. That is deliberate: if the
-Open URLs action does not switch apps on some iOS version, or the run is
-suspended before reaching it, the phone still lands back in the app exactly as it
-did before. When both fire, the second is a reload of a tab already on screen.
+**`x-success` does not fire at the end of the run.** Tested on device: once the
+shortcut has put Safari in front, the callback waits until Shortcuts is next
+foregrounded by hand — a backgrounded app cannot switch apps. So it covers one
+case only, an iOS version where the early return does not switch apps at all, and
+nothing may depend on it. The web app used to get a page load per transition out
+of it; it repaints on `visibilitychange` instead now. `x-error` is on the same
+delay, which means a failed transition reports late or not at all.
 
 **The failure mode to watch for on device.** What runs after the early return is
 the fade-in. A backgrounded Shortcuts run that iOS suspends part way through

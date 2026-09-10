@@ -17,10 +17,14 @@
 //     exactly this reason — an await between the tap and the navigation can lose user
 //     gesture attribution, which is what puts the prompt back. Expiry is the background
 //     refresh timer's problem (auth.js), never this path's.
-//  3. The random offset is re-rolled every time an href is built. Every transition
-//     reloads the page — `x-success` returns to a fresh context — so building hrefs at
-//     render is all the re-randomising this needs. No extra machinery, and deliberately
-//     not rolled once at startup.
+//  3. The random offset is re-rolled every time an href is built, and deliberately not
+//     rolled once at startup. This used to be all the re-randomising there was, because
+//     every transition ended in a page load: `x-success` navigated back here when the
+//     run finished. It does not any more — the shortcut returns to the app itself,
+//     mid-run, and a backgrounded app cannot switch apps, so `x-success` sits queued
+//     until Shortcuts is next opened by hand. Confirmed on device. main.js now repaints
+//     on `visibilitychange` instead, which is what re-rolls the offsets and what picks
+//     up a token refreshed while the app was away.
 //
 // The payload carries a `shuffle` boolean (#10). It used to be absent, because the
 // shortcut hardcoded `?state=true`; a playlist marked `inorder` needs shuffle explicitly
@@ -123,13 +127,17 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random, returnUrl
  * #4 spike showed works cleanly. The reload that causes is what re-rolls each tile's
  * random offset.
  *
- * `x-success` is KEPT even though the shortcut now also returns to the app by itself,
- * partway through its run (`return_url` in the payload). They are not redundant: the
- * shortcut's own Open URLs action fires as soon as the playlist is playing, which is the
- * point of it, while x-success fires when the whole run — fade-in included — finishes.
- * If the early return does not work on a given iOS version, x-success still lands the
- * phone back here exactly as before. When both fire, the second is a reload of a tab
- * already on screen rather than an app switch.
+ * `x-success` is KEPT even though the shortcut now returns to the app by itself, partway
+ * through its run — but NOT as the backstop it was first assumed to be. On device it does
+ * not fire when the run ends: a backgrounded app cannot switch apps, so once the
+ * shortcut's own Open App action has put Safari in front, the callback waits for
+ * Shortcuts to be foregrounded by hand.
+ *
+ * What it is still worth: it is the ONLY return if the early action does not switch apps
+ * at all on some iOS version, which is the case it now covers. Nothing else may depend on
+ * it — the offset re-roll that used to ride on its reload is a `visibilitychange` repaint
+ * in main.js now, and `?err=1` from `x-error` reports on the same delay, so a failed
+ * transition is effectively silent until Shortcuts is opened.
  */
 export function buildHandoffUrl(payload, returnUrl = appReturnUrl()) {
   const params = new URLSearchParams({

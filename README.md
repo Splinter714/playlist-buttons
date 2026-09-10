@@ -57,9 +57,15 @@ The switch is as short as it can be made: an Open App action right after the pla
 call brings Safari straight back, so the phone is on the grid again as soon as the
 new playlist is playing and the fade-in finishes behind it. Safari, not the web
 app — Shortcuts' Open App does not list installed web apps, and the app is used
-from a Safari tab for the same reason. `x-success` is still sent and still fires
-when the run ends, as a backstop and as the reload that re-rolls each tile's
-random offset.
+from a Safari tab for the same reason.
+
+`x-success` is still sent, but it is **not** the backstop it looks like. Tested on
+device: it does not fire when the run ends. A backgrounded app cannot switch apps,
+so once the shortcut has put Safari in front, the callback waits for Shortcuts to
+be opened by hand. It therefore covers exactly one case — an iOS version where the
+Open App action does not switch apps at all — and nothing may be built on it. In
+particular the app no longer gets a page load per transition, which is what the
+offset re-roll used to ride on (see Shuffle, below).
 
 ### Why the app switch can't be avoided
 
@@ -142,8 +148,12 @@ full volume instead of ramping (`upMs: 0`).
 
 ## Shuffle, and playing in order
 
-By default a playlist starts shuffled from a random track — the offset is re-rolled on
-every page load, and every transition reloads the page. A playlist can instead be marked
+By default a playlist starts shuffled from a random track. The offset is re-rolled every
+time a tile's href is built, which is every render — originally once per transition,
+because every transition ended in a page load. That reload is gone: the shortcut returns
+to the app mid-run and `x-success` never fires while Shortcuts is in the background, so
+the app repaints on `visibilitychange` instead. Same effect, no page load: coming back
+from a transition re-rolls every tile. A playlist can instead be marked
 `inorder` on the settings screen — the **no shuffle** pill — which starts it at track 1
 with shuffle off, the same way every time (#10). It's a second, independent pill beside
 **no fade**, not a combined control: a playlist can start loud, start at track 1, both or

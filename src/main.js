@@ -183,6 +183,25 @@ async function main() {
   // Grid ⇄ settings. The hash is the whole router.
   window.addEventListener('hashchange', paint);
 
+  // Coming back from the shortcut (#4). This used to be a page LOAD — `x-success`
+  // navigated here when the run finished — and that reload was what re-rolled every
+  // tile's random start offset and refreshed every handoff href against the current
+  // token. Neither is true any more.
+  //
+  // The shortcut now hands the phone back itself, with an Open App action fired as soon
+  // as the playlist is playing, and a backgrounded app cannot switch apps — so
+  // `x-success` does not fire when the run ends. It waits until Shortcuts is next in the
+  // foreground, which on a normal evening is never. Confirmed on device.
+  //
+  // So the repaint the reload used to do happens here instead, every time the page comes
+  // back to the front. Cheap: a render off state we already hold, no network.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    // Never under a finger — same rule as everywhere else (#3).
+    if (state.dragging) return;
+    paint();
+  });
+
   const redirect = await handleRedirect();
   if (redirect.error) {
     setAppStatus(`login failed: ${redirect.error}`, 'error');
