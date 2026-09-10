@@ -20,6 +20,23 @@ on its own, not on a triggered playlist change.
 What *can* set volume on iOS is the Shortcuts app. So the volume ramp lives in a
 shortcut, and everything else lives in the web app.
 
+### Why not a native iOS app
+
+A native app could set system volume directly and skip the Shortcuts handoff
+entirely — no app switch, no `x-success`, no page reload per transition. That's a
+real advantage, and it was weighed rather than overlooked.
+
+It loses on cost. Native means Xcode and Swift instead of the plain-JS + Vite stack
+reused across these projects, an Apple Developer account to keep the app installed
+past the 7-day sideload window, and a rebuild-and-reinstall cycle in place of pushing
+to Pages.
+
+The deciding factor was that the handoff was tested before being built on. A throwaway
+two-action shortcut proved `x-success` returns to Safari with no iOS confirmation
+prompt — provided the app fires it from a real link tap under a user gesture, since
+address-bar navigation *does* prompt — and the app switch was unobtrusive in practice.
+The main thing native would have fixed turned out not to hurt.
+
 ## Architecture
 
 The web app is a remote — it never plays audio. The native Spotify app is the
