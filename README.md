@@ -66,10 +66,26 @@ Spotify — it only reads the playlist list.
 
 The array order *is* the button order, so reordering is moving an element. It's an
 include list: nothing is in the rotation until it's added, from the settings screen —
-which is also the only way to take something off it, and where the fade length and each
-playlist's two flags (`nofadein` and `inorder`) are set. One screen, reached from the
-grid, no search box: a plain scrolling list of every playlist on the account, tapped to
-add or remove.
+which is also the only way to take something off it, to reorder it, and where the fade
+length and each playlist's two flags (`nofadein` and `inorder`) are set. One screen,
+reached from the grid, no search box: a plain scrolling list of every playlist on the
+account, tapped to add or remove.
+
+That list is **sorted**: the rotation first, in button order, then everything else under
+an "everything else" divider. The sort is what makes the order draggable at all — a list
+in account order would scatter button 3 forty rows away from button 4. Each member row
+carries a drag handle at its trailing edge, and a drag can only start there, so the row's
+own tap keeps meaning add-or-remove and nothing else. A drag can't push a row out of the
+member block either; leaving the rotation is a tap, not a gesture.
+
+Reordering used to live on the grid, behind an edit mode that turned tap-to-play off
+while you dragged. Moving it here deleted the mode outright, and with it the only
+`preventDefault` in the app — which mattered more than the tidiness: #4's on-device spike
+found that suppressing or synthesising navigation is what brings iOS's "Open in
+Shortcuts?" prompt back, so the fewer places a tap on a tile is anything but a plain link
+navigation, the better. Every tile on the grid is now a live link, always. Dragging a row
+on a settings screen was never risky in the way dragging a live button was, so the mode
+had nothing left to protect.
 
 This started out the other way round. Membership lived in the playlist description as
 a `[game order:3 nofadein]` tag, which was appealing because it's managed from the
@@ -96,16 +112,22 @@ own, which is the whole point.
 
 One duration, used for both the fade out and the fade in, 3s by default, adjustable on
 the settings screen and stored in `localStorage` alongside the rotation. It's global —
-there's no per-playlist fade length. The per-playlist fade setting is `nofadein`, which
-means the new playlist starts at full volume instead of ramping (`upMs: 0`).
+there's no per-playlist fade length. The per-playlist fade setting is `nofadein` — the
+**no fade** pill on the playlist's settings row — which means the new playlist starts at
+full volume instead of ramping (`upMs: 0`).
 
 ## Shuffle, and playing in order
 
 By default a playlist starts shuffled from a random track — the offset is re-rolled on
 every page load, and every transition reloads the page. A playlist can instead be marked
-`inorder` on the settings screen, which starts it at track 1 with shuffle off, the same
-way every time (#10). It's a second, independent pill beside `nofadein`, not a combined
-control: a playlist can start loud, start at track 1, both or neither.
+`inorder` on the settings screen — the **no shuffle** pill — which starts it at track 1
+with shuffle off, the same way every time (#10). It's a second, independent pill beside
+**no fade**, not a combined control: a playlist can start loud, start at track 1, both or
+neither.
+
+Both pills name the *exception* rather than the behaviour ("no fade", not "full volume";
+"no shuffle", not "in order"), so an unlit row reads as "nothing unusual about this one"
+at a glance down a list that is mostly unlit.
 
 ## Shortcut contract
 
@@ -137,8 +159,8 @@ change, rather than running on a token that can still edit playlists.
 
 ## v1
 
-Playlist buttons as cover art, drag to reorder, tap to transition, shuffle with a
-random start offset, per-playlist `nofadein` and `inorder`, 3s default fades adjustable
-in settings.
+Playlist buttons as cover art, tap to transition, shuffle with a random start offset,
+per-playlist `nofadein` and `inorder`, order dragged from the settings screen, 3s default
+fades adjustable in settings.
 
 Not in v1: artwork upload from the app (`ugc-image-upload`), auto-rotation, mood groupings.

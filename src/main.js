@@ -45,9 +45,10 @@ const state = {
   // Set when this load is the return leg of a shortcut run that failed (#4). Read off
   // the URL once, on load, and shown on the grid until the next tap takes us away.
   notice: null,
-  // Edit mode (#3): drag to reorder, no tap-to-play, markers visible. Deliberately NOT
-  // persisted — a reload, and every transition is a reload, lands on a playable grid.
-  editing: false,
+  // A row on the settings screen is under a finger right now (#3). Nothing may repaint
+  // while that is true — a revalidation landing mid-drag would yank the row out from
+  // under it. Deliberately NOT persisted: it lasts exactly as long as one gesture.
+  dragging: false,
 };
 
 function setAppStatus(text = '', kind = '') {
@@ -107,21 +108,17 @@ function paintSettings() {
       toggleInorder(id);
       return afterRotationChange();
     },
+    // A drop (#3). The DOM is already in the new order — the drag put it there — so this
+    // writes it through and hands back fresh positions for the badges, and the list
+    // renumbers in place rather than being rebuilt.
+    onReorder: (ids) => {
+      reorderRotation(ids);
+      return afterRotationChange();
+    },
+    onDragChange: (active) => { state.dragging = active; },
     onFadeChange: (ms) => writeFadeMs(ms),
     onLogin: () => beginLogin(),
   });
-}
-
-/**
- * A drop (#3). The DOM is already in the new order — the drag put it there — so this
- * writes it through and updates our copy, but deliberately does NOT repaint: a repaint
- * would rebuild the tiles under the user's thumb mid-rearrange. The next paint (leaving
- * edit mode, or any reload) renders from the rotation, which is now the same order.
- */
-function onReorder(ids) {
-  reorderRotation(ids);
-  state.items = joinRotation(readRotation(), readCache());
-  renderDebugPlaylists(state.items, state.candidateCount);
 }
 
 function paint() {
@@ -129,9 +126,6 @@ function paint() {
   paintNav(route);
 
   if (route === 'settings') {
-    // Membership is settings' job and order is the grid's; leaving the grid leaves edit
-    // mode, so coming back is always a playable grid.
-    state.editing = false;
     paintSettings();
     return;
   }
@@ -148,12 +142,6 @@ function paint() {
       items: state.items,
       nowPlayingId: resolveNowPlaying(state.items, readNowPlaying()),
       notice: state.notice,
-      editing: state.editing,
-      onToggleEdit: (next) => {
-        state.editing = next;
-        paint();
-      },
-      onReorder,
     });
   } else if (view === 'skeleton') {
     renderSkeleton(appEl);
@@ -168,10 +156,11 @@ function paint() {
 function update(playlists) {
   if (playlists) state.candidateCount = playlists.length;
   state.items = joinRotation(readRotation(), playlists ?? readCache());
-  // Same rule as a drop: never rebuild the tiles while they are being dragged. A
-  // revalidation landing mid-rearrange would yank the tile out from under the finger.
-  // The list is up to date either way, and leaving edit mode paints it.
-  if (!state.editing) paint();
+  // Never rebuild the list while a row is being dragged (#3): a revalidation landing
+  // mid-rearrange would yank the row out from under the finger. The list is up to date
+  // either way, and the next paint — the drop's own refresh, or leaving the screen —
+  // shows it.
+  if (!state.dragging) paint();
   renderDebugPlaylists(state.items, state.candidateCount);
 }
 
@@ -228,11 +217,10 @@ async function main() {
       setDebugStatus(`token refresh failed: ${e.message}`, 'error');
     },
     () => {
-      // Repaint so every tile's handoff href picks up the new token. Skipped while
-      // rearranging: a re-render mid-drag would yank the tile out from under the finger,
-      // and leaving edit mode repaints anyway.
+      // Repaint so every tile's handoff href picks up the new token. Skipped while a
+      // settings row is being dragged, for the same reason as above.
       renderDebugAuth();
-      if (!state.editing) paint();
+      if (!state.dragging) paint();
     },
   );
 

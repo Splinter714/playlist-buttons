@@ -1,5 +1,5 @@
-/* The settings screen (#5 / #6 / #8). Same phone-first, dim-room palette as the grid —
-   variables come from grid.css, which is imported first. */
+/* The settings screen (#3 / #5 / #6 / #8). Same phone-first, dim-room palette as the
+   grid — variables come from grid.css, which is imported first. */
 
 .settings {
   display: flex;
@@ -106,9 +106,11 @@
 .pl-main:active { opacity: 0.6; }
 
 .pl-art {
+  position: relative;
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
+  border: 1px solid var(--tile-edge);
   border-radius: 5px;
   overflow: hidden;
   background: var(--tile-bg);
@@ -150,30 +152,54 @@
   color: #6e6e78;
 }
 
-/* A dotted outline for "not in", a filled green disc with its button number for "in".
-   The number is what makes "adding appends to the end" visible. */
+/* The button number, on the cover art — because on the grid the cover art IS the button,
+   so this row's badge and that tile are visibly the same thing. It sat in the row's flow
+   before, between the name and the pills, where it read as floating in the middle of the
+   row and drifted left or right depending on how wide the pills next to it happened to
+   be. Anchored to a corner of a fixed-size square, it cannot drift.
+
+   Bottom-left, not top-left: cover art crops from the centre, and the bottom-left corner
+   is the quietest part of most of them. */
 .pl-badge {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #08130b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+.pl-badge[hidden] { display: none; }
+
+/* The add affordance, at the trailing edge of a non-member row — the same column the
+   drag handle occupies once it is a member, so the last thing on every row is that
+   row's next gesture and the column never sits empty. */
+.pl-add {
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  /* The same 30px column as .pl-handle, so the two never shift the row's right edge
+     when a playlist crosses from one to the other. */
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px dashed #45454f;
   color: #6e6e78;
-  font-size: 14px;
-  line-height: 24px;
+  font-size: 15px;
+  line-height: 28px;
   text-align: center;
-  font-variant-numeric: tabular-nums;
 }
-.pl-row.is-member .pl-badge {
-  border: 0;
-  background: var(--accent);
-  color: #08130b;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 26px;
-}
+.pl-add[hidden] { display: none; }
 
-/* The per-playlist flags — #6 "full volume" and #10 "in order" — on the member's own row.
+/* The per-playlist flags — #6 "no fade" and #10 "no shuffle" — on the member's own row.
+   Both pills name the EXCEPTION rather than the behaviour ("no fade", not "full volume"),
+   so an unlit row reads as "nothing unusual here" at a glance down a long list.
    Two independent pills, styled identically because neither is subordinate to the other.
    They wrap onto a second line before they squeeze the name, which is what a long name on
    a 375px screen needs. */
@@ -184,7 +210,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  max-width: 45%;
+  max-width: 42%;
 }
 .pl-flags[hidden] { display: none; }
 
@@ -207,6 +233,73 @@
   background: rgba(29, 185, 84, 0.16);
   color: var(--accent);
 }
+
+/* ---------------------------------------------------------------------------------
+   Reordering (#3) — dragging a member's row
+   --------------------------------------------------------------------------------- */
+
+/* `touch-action` is load-bearing, not polish: drag.js never calls preventDefault, so
+   this is the only thing stopping the page from scrolling under a dragging finger. It
+   is on the handle alone, so the list still scrolls normally everywhere else — which is
+   most of a list that can be hundreds of rows long. */
+.pl-handle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 44px;
+  margin-left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+}
+.pl-handle[hidden] { display: none; }
+
+/* Three bars, drawn rather than typed: a glyph would be at the mercy of whatever font
+   the phone falls back to. */
+.pl-handle::before {
+  content: '';
+  width: 16px;
+  height: 12px;
+  background: repeating-linear-gradient(#6e6e78 0 2px, transparent 2px 5px);
+}
+
+/* No text selection anywhere in the list while a row is being dragged — a mouse drag
+   would otherwise select every name it crosses. */
+.pl-list.is-reordering {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pl-list.is-reordering .pl-handle { cursor: grabbing; }
+
+/* The row under the finger: lifted, and transparent to hit-testing so drag.js measures
+   the rows underneath it rather than itself. Rows snap between slots rather than
+   sliding — at this height the swap is a single row and an animation would mostly
+   obscure where the thing actually landed. */
+.pl-row.is-dragging {
+  position: relative;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: 8px;
+  background: #17171d;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+/* Where the rotation stops and the rest of the account starts. The member block above it
+   is the only draggable stretch of the list, so the line has to be visible — without it
+   a handle would look like it could be dragged anywhere. */
+.pl-divider {
+  margin: 14px 0 2px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid #1e1e24;
+  color: #6e6e78;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pl-divider[hidden] { display: none; }
 
 /* The top bar: the only navigation there is. */
 #topbar {

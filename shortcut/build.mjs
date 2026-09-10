@@ -429,7 +429,7 @@ ramp({
 });
 
 // 4. Shuffle, as the app asked for it (#10). Normally true, so the random offset lands
-//    in a shuffled queue; false for a playlist marked "in order", which also arrives with
+//    in a shuffled queue; false for a playlist marked "no shuffle", which also arrives with
 //    `offset: 0` so it starts on track 1. The app decides; this used to be hardcoded to
 //    `?state=true`.
 comment('Set shuffle from the input (true normally, false for an in-order playlist)');

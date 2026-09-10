@@ -81,7 +81,7 @@ from here.
    and waiting `downMs / STEPS / 1000` seconds.
 4. `PUT /v1/me/player/shuffle?state=<shuffle>` — the value comes from the input,
    not from here. It is `true` for an ordinary playlist and `false` for one
-   marked "in order" in settings, which also arrives with `offset: 0` (#10).
+   marked "no shuffle" in settings, which also arrives with `offset: 0` (#10).
 5. `PUT /v1/me/player/play` with `{context_uri, offset: {position: N}}`.
 6. If that failed, `GET /v1/me/player/devices`, take the first device, and retry
    the play call against it.
@@ -300,7 +300,7 @@ Two smaller ones:
   rendering a dictionary boolean into text as `true` / `false`. If it renders
   `1` / `0` instead, Spotify rejects the call with a 400 and — because the
   shuffle call's result is not checked — the symptom is subtle: playback still
-  starts, but shuffle stays however it was last left, so an "in order" playlist
+  starts, but shuffle stays however it was last left, so a "no shuffle" playlist
   shuffles anyway. Fix by having the web app send the string `"true"`/`"false"`
   in `handoff.js` instead of a boolean.
 - **`WFItemType: 3` for `offset.position`.** If Spotify gets `"position": "47"`

@@ -9,6 +9,10 @@
   --fg: #f2f2f4;
   --muted: #9a9aa2;
   --tile-bg: #1b1b20;
+  /* A medium grey edge on every tile. Cover art runs the whole gamut — a lot of it is
+     near-black at the corners — and without this those tiles bleed into the page and
+     stop reading as buttons at all. */
+  --tile-edge: #4a4a55;
   --skeleton: #202027;
   --skeleton-hi: #2a2a33;
   --accent: #1db954; /* Spotify green — the now-playing marker, nothing else */
@@ -41,6 +45,7 @@ body {
   display: block;
   aspect-ratio: 1 / 1;
   overflow: hidden;
+  border: 1px solid var(--tile-edge);
   border-radius: 8px;
   background: var(--tile-bg);
   color: inherit;
@@ -60,15 +65,27 @@ body {
 
 /* Centred pill along the bottom edge. It shrink-wraps the name rather than spanning
    the tile, so a short name covers very little art — and because the background is
-   solid, it stays legible on a pure-white cover without needing a text shadow. */
+   solid, it stays legible on a pure-white cover without needing a text shadow.
+
+   CENTRED BY MARGIN, not by `left: 50%` + a translate. That is not a style preference:
+   this box is absolutely positioned, so with only `left` set its shrink-to-fit width is
+   capped at the space between `left` and the tile's right edge — HALF the tile. Names
+   were wrapping mid-word at about six characters ("Shenani/gans") on a tile with room
+   for eleven, and no `max-width` could give the space back, because the cap came from
+   the offset rather than from the max-width. Pinning both edges and letting `margin:
+   auto` centre a `fit-content` box makes the whole tile width available, which is what
+   the max-width below was always meant to be measured against. */
 .tile-name {
   position: absolute;
   bottom: 5px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 10px);
+  left: 2px;
+  right: 2px;
+  margin: 0 auto;
+  width: -webkit-fit-content;
+  width: fit-content;
+  max-width: 100%;
   box-sizing: border-box;
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.78);
   color: #fff;
@@ -99,9 +116,14 @@ body {
   position: absolute;
   inset: 0;
   border: 3px solid var(--accent);
-  border-radius: 8px;
+  /* One px inside the tile's own border, so the radii sit concentric rather than
+     leaving a grey sliver curving through the green. */
+  border-radius: 7px;
   pointer-events: none;
 }
+/* …and the tile's grey edge goes green with it, so a playing tile reads as one ring
+   rather than a green one with a grey outline around it. */
+.tile.is-playing { border-color: var(--accent); }
 
 .tile-dot {
   position: absolute;
@@ -115,129 +137,6 @@ body {
 }
 
 .tile:active { opacity: 0.72; }
-/* Edit mode has its own press state (below); the play-mode dim would read as "this did
-   something" on a tile that deliberately does nothing. */
-.grid--editing .tile:active { opacity: 1; }
-
-/* ---------------------------------------------------------------------------------
-   Edit mode (#3) — rearranging, not playing
-   --------------------------------------------------------------------------------- */
-
-/* These three properties are load-bearing, not polish. drag.js never calls
-   preventDefault, so this is what stops the page scrolling under a dragging finger,
-   the names getting text-selected by a mouse drag, and the desktop browser starting
-   its own native link-drag. */
-.grid--editing .tile {
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-user-drag: none;
-  cursor: grab;
-}
-.grid--editing .tile.is-dragging { cursor: grabbing; }
-
-/* A dashed ring so the mode is visible at a glance without covering any art. It has to
-   be a pseudo-element with a z-index: an `outline` — and a plain z-index:auto
-   ::before — is painted underneath the absolutely-positioned cover image and simply
-   never appears. Same trap as .tile.is-playing::after. */
-.grid--editing .tile::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border: 1.5px dashed rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
-  pointer-events: none;
-}
-
-/* The tile under the finger: lifted, slightly larger, and transparent to hit-testing so
-   drag.js measures the tiles underneath it rather than itself. */
-.grid--editing .tile.is-dragging {
-  z-index: 5;
-  pointer-events: none;
-  opacity: 0.92;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
-}
-.grid--editing .tile.is-dragging::before { border-style: solid; }
-
-/* While a drag is in progress the rest of the grid steps back, so the tile under the
-   finger is unambiguous on a 3-wide grid of loud cover art. Tiles snap between slots
-   rather than sliding: at this size the swap is a single tile-width and an animation
-   would mostly obscure where the thing actually landed. */
-.grid--dragging .tile:not(.is-dragging) { opacity: 0.72; }
-
-/* The per-playlist markers (#6 nofadein, #10 inorder), edit mode only.
-
-   Top-left, stacked, because the other three corners are taken: the now-playing dot is
-   top-right and the name pill runs along the bottom. A tile is ~113px wide at 375px and
-   can carry BOTH markers, so they are two short lines rather than one long one — two
-   stacked 12px rows still leave most of the artwork visible.
-
-   Same solid-black pill as the name, deliberately: it keeps them reading as one family,
-   and it keeps the accent green meaning now-playing and nothing else. */
-.tile-flags {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  max-width: calc(100% - 10px);
-  pointer-events: none;
-}
-
-.tile-flag {
-  max-width: 100%;
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #e6e6ea;
-  font-size: 9.5px;
-  line-height: 1.35;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The mode switch, above the grid. Quiet in play mode — it is not what the screen is
-   for — and stated plainly once you are in it. */
-.grid-bar {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 10px;
-}
-
-.grid-edit {
-  flex: 0 0 auto;
-  padding: 6px 12px;
-  border: 1px solid #33333c;
-  border-radius: 999px;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  -webkit-tap-highlight-color: transparent;
-}
-.grid-edit[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #08130b;
-}
-
-.grid-bar-note {
-  flex: 1 1 100%;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
 
 /* Skeleton — only ever seen on a genuine first load. */
 .tile--skeleton {

@@ -1,23 +1,51 @@
 // The settings screen — one screen, two sections, reachable from the grid.
 //
-// #5, #6 and #8 all landed here rather than becoming three screens:
+// #5, #6, #8 and now #3 all landed here rather than becoming separate screens:
 //   Fade     (#5) — one duration, both directions, global. No per-playlist override.
 //   Rotation (#8) — every playlist on the account, tap to add or remove. Adding appends
 //                   to the end. This is the ONLY way membership changes now that #9 has
 //                   removed description tags.
-//   Full volume (#6) — a per-member toggle living on that playlist's row, not in a
-//                   separate list and not behind a long-press (which would collide with
-//                   #3's drag).
-//   In order  (#10) — a SECOND, independent per-member toggle beside it. Two pills, not
+//   No fade  (#6) — a per-member toggle living on that playlist's row, not in a
+//                   separate list and not behind a long-press.
+//   No shuffle (#10) — a SECOND, independent per-member toggle beside it. Two pills, not
 //                   one three-way control: a playlist can start loud, start at track 1,
 //                   both or neither.
+//   Order    (#3) — drag a member's handle. This moved here off the grid: the grid is a
+//                   live remote, so rearranging there needed a whole mode to turn
+//                   tap-to-play off, while this screen is already the one where the
+//                   rotation is decided and a tap here has never played anything.
 //
-// Deliberately not here: no search box, no per-playlist fade, no reordering, no export.
-// Each of those was asked about and declined.
+// THE LIST IS SORTED, and that is what makes dragging mean anything. Members come first,
+// in rotation order — which IS button order — and everything else follows in whatever
+// order the account returned it. A list interleaving the two could not be dragged into
+// an order at all: button 3 might sit forty rows below button 4.
 //
-// Rows update in place rather than being rebuilt. Adding renumbers everything after it,
-// so a tap has to touch every row's badge — but re-creating the <img> elements on every
-// tap would flicker the cover art of a list that can be hundreds long.
+// Deliberately not here: no search box, no per-playlist fade, no export. Each of those
+// was asked about and declined.
+//
+// Rows update and MOVE in place rather than being rebuilt. Adding renumbers everything
+// after it and lifts the row into the member block, so a tap touches every row's badge
+// and re-sorts the list — but re-creating the <img> elements on every tap would flicker
+// the cover art of a list that can be hundreds long, so nodes are moved, never remade.
+
+import { attachDragReorder } from './drag.js';
+
+/** The two per-playlist flags, and what each pill says. Both name the exception. */
+export const FLAG_LABELS = [
+  ['nofadein', 'no fade'],
+  ['inorder', 'no shuffle'],
+];
+
+/** What the Rotation section says it does, now that order is set here too (#3). */
+export const ROTATION_NOTE =
+  'Tap a playlist to add it to the grid or take it off. New ones go on the end — drag the handles to reorder.';
+
+/** The divider between the rotation and the rest of the account. */
+export const REST_HEADING = 'Everything else';
+
+/** Only members are draggable, and only by their handle — the row body is still a tap. */
+const MEMBER_SELECTOR = '.pl-row.is-member';
+const HANDLE_SELECTOR = '.pl-handle';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -28,6 +56,20 @@ function el(tag, className, text) {
 
 function fadeLabel(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Members first, in button order; everything else after, in account order.
+ *
+ * Exported because it is the rule the whole screen rests on: the drag reorders DOM
+ * siblings, so "in the rotation" and "in button order" have to be true of the DOM before
+ * a finger touches it.
+ */
+export function sortForDisplay(candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const members = list.filter((c) => c?.inRotation).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const rest = list.filter((c) => !c?.inRotation);
+  return [...members, ...rest];
 }
 
 /** Build one row. Membership state is applied separately, by applyRow. */
@@ -49,6 +91,13 @@ function buildRow(candidate) {
     img.addEventListener('error', () => img.remove(), { once: true });
     art.append(img);
   }
+  // The button number sits ON the cover art, because on the grid the cover art IS the
+  // button. It used to sit in the row's flow between the name and the pills, where it
+  // read as floating in the middle of nothing — and where it moved horizontally
+  // depending on how wide the pills beside it happened to be.
+  const badge = el('span', 'pl-badge');
+  badge.setAttribute('aria-hidden', 'true');
+  art.append(badge);
   main.append(art);
 
   const text = el('span', 'pl-text');
@@ -57,16 +106,19 @@ function buildRow(candidate) {
   text.append(meta);
   main.append(text);
 
-  // The badge is the add/remove affordance AND, once a member, the position — which is
-  // how "adding appends to the end" is visible at all. Read-only: reordering is #3.
-  main.append(el('span', 'pl-badge'));
+  // The add affordance, at the row's trailing edge — the same column the handle takes
+  // once the playlist is a member, so the rightmost thing on every row is whatever that
+  // row's next gesture is.
+  const add = el('span', 'pl-add', '+');
+  add.setAttribute('aria-hidden', 'true');
+  main.append(add);
   li.append(main);
 
   // Only shown for members, but the row's height comes from the artwork, so a row gaining
   // or losing these never changes the list's layout. Both pills are built the same way
   // and sit side by side — the flags are independent, so neither is nested under the other.
   const flags = el('span', 'pl-flags');
-  for (const [action, label] of [['nofadein', 'full volume'], ['inorder', 'in order']]) {
+  for (const [action, label] of FLAG_LABELS) {
     const toggle = el('button', `pl-flag pl-flag--${action}`);
     toggle.type = 'button';
     toggle.dataset.action = action;
@@ -74,6 +126,13 @@ function buildRow(candidate) {
     flags.append(toggle);
   }
   li.append(flags);
+
+  // The drag handle (#3). aria-hidden and not focusable: it is a pointer-only affordance,
+  // and the position it changes is already spoken in the row's own label. Pretending it
+  // is a button would promise a keyboard interaction that does not exist.
+  const handle = el('span', 'pl-handle');
+  handle.setAttribute('aria-hidden', 'true');
+  li.append(handle);
 
   return li;
 }
@@ -89,7 +148,9 @@ function applyRow(li, candidate) {
   const main = li.querySelector('.pl-main');
   const meta = li.querySelector('.pl-meta');
   const badge = li.querySelector('.pl-badge');
+  const add = li.querySelector('.pl-add');
   const flags = li.querySelector('.pl-flags');
+  const handle = li.querySelector('.pl-handle');
 
   li.classList.toggle('is-member', candidate.inRotation);
   main.setAttribute('aria-pressed', String(candidate.inRotation));
@@ -102,7 +163,10 @@ function applyRow(li, candidate) {
 
   const tracks = candidate.trackTotal ?? 0;
   meta.textContent = `${tracks} track${tracks === 1 ? '' : 's'}`;
-  badge.textContent = candidate.inRotation ? String(candidate.position) : '+';
+  badge.textContent = candidate.inRotation ? String(candidate.position) : '';
+  badge.hidden = !candidate.inRotation;
+  add.hidden = candidate.inRotation;
+  handle.hidden = !candidate.inRotation;
 
   flags.hidden = !candidate.inRotation;
   applyFlag(
@@ -122,6 +186,20 @@ function applyRow(li, candidate) {
 }
 
 /**
+ * Put the existing nodes into `nodes` order with as few moves as possible.
+ *
+ * Nodes, never markup: a moved <li> keeps its already-decoded cover art, which is the
+ * whole reason this screen updates in place instead of re-rendering.
+ */
+function arrange(list, nodes) {
+  let cursor = list.firstChild;
+  for (const node of nodes) {
+    if (node === cursor) cursor = cursor.nextSibling;
+    else list.insertBefore(node, cursor);
+  }
+}
+
+/**
  * @param {HTMLElement} root
  * @param {object} opts
  * @param {boolean} opts.loggedIn
@@ -134,6 +212,8 @@ function applyRow(li, candidate) {
  * @param {(id: string) => Array} opts.onToggleMember    returns the new candidate list
  * @param {(id: string) => Array} opts.onToggleNofadein  returns the new candidate list
  * @param {(id: string) => Array} opts.onToggleInorder   returns the new candidate list
+ * @param {(ids: string[]) => Array} opts.onReorder      returns the new candidate list
+ * @param {(active: boolean) => void} opts.onDragChange  a drag started / finished
  * @param {(ms: number) => void}  opts.onFadeChange
  * @param {() => void} opts.onLogin
  */
@@ -148,6 +228,8 @@ export function renderSettings(root, {
   onToggleMember = () => candidates,
   onToggleNofadein = () => candidates,
   onToggleInorder = () => candidates,
+  onReorder = () => candidates,
+  onDragChange = () => {},
   onFadeChange = () => {},
   onLogin = () => {},
 } = {}) {
@@ -181,14 +263,14 @@ export function renderSettings(root, {
   fade.append(el('p', 'section-note', 'Used for the fade out and the fade in, for every playlist.'));
   page.append(fade);
 
-  // ---- Rotation (#8) + full volume (#6) + in order (#10) ----------------------------
+  // ---- Rotation (#8) + order (#3) + no fade (#6) + no shuffle (#10) -----------------
   const rotation = el('section', 'settings-section');
   const rotHead = el('div', 'section-head');
   rotHead.append(el('h2', null, 'Rotation'));
   const count = el('span', 'rot-count');
   rotHead.append(count);
   rotation.append(rotHead);
-  rotation.append(el('p', 'section-note', 'Tap a playlist to add it to the grid or take it off. New ones go on the end.'));
+  rotation.append(el('p', 'section-note', ROTATION_NOTE));
 
   const setCount = (list) => {
     const n = list.filter((c) => c.inRotation).length;
@@ -212,22 +294,40 @@ export function renderSettings(root, {
   } else {
     const list = el('ul', 'pl-list');
     const rows = new Map();
+    // Where the member block ends and the rest of the account begins. A row rather than a
+    // second list, so adding a playlist is one node moving across one divider instead of
+    // a hand-off between two <ul>s.
+    const divider = el('li', 'pl-divider', REST_HEADING);
+
+    const layout = (next) => {
+      const ordered = sortForDisplay(next);
+      const members = ordered.filter((c) => c.inRotation);
+      const nodes = ordered.map((c) => rows.get(c.id)).filter(Boolean);
+      nodes.splice(members.length, 0, divider);
+      arrange(list, nodes);
+      divider.hidden = !members.length || members.length === ordered.length;
+    };
+
     for (const c of candidates) {
       const li = buildRow(c);
       applyRow(li, c);
       rows.set(c.id, li);
       list.append(li);
     }
+    list.append(divider);
+    layout(candidates);
     setCount(candidates);
 
-    // Removing renumbers everything below it, so a tap re-applies every row's state.
-    // Attribute and text updates only — the artwork is never re-created.
+    // Adding or removing renumbers the rest of the block and moves the row across the
+    // divider, so a tap re-applies every row's state and re-sorts the list. Attribute,
+    // text and node moves only — the artwork is never re-created.
     const refresh = (next) => {
       if (!Array.isArray(next)) return;
       for (const c of next) {
         const li = rows.get(c.id);
         if (li) applyRow(li, c);
       }
+      layout(next);
       setCount(next);
     };
 
@@ -239,6 +339,15 @@ export function renderSettings(root, {
       const handler = { nofadein: onToggleNofadein, inorder: onToggleInorder }[button.dataset.action]
         ?? onToggleMember;
       refresh(handler(id));
+    });
+
+    // #3. Handle-only and members-only: a drag can never start on the row body, where a
+    // tap already means add or remove, and can never land outside the member block.
+    attachDragReorder(list, {
+      selector: MEMBER_SELECTOR,
+      handle: HANDLE_SELECTOR,
+      onReorder: (ids) => refresh(onReorder(ids)),
+      onDragChange,
     });
 
     rotation.append(list);

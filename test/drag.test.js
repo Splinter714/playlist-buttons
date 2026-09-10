@@ -5,11 +5,18 @@
 //  1. The two decisions worth pinning down on their own — where a pointer lands, and what
 //     an order looks like after a move — are pure functions.
 //  2. The controller, driven with real PointerEvents against stubbed geometry. jsdom does
-//     no layout, so every tile's rect is faked; the grid is laid out as a 3-wide grid of
-//     100px tiles, which is close enough to the real 375px shape to reason about.
+//     no layout, so every row's rect is faked; the list is laid out as a stack of 60px
+//     rows, which is the shape the settings screen actually has.
+//
+// The controller takes its item selector as an option, so these tests drive it exactly
+// the way the settings screen does: only `.row.is-member` moves, and only a press that
+// starts on a `.handle` starts a drag at all.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { attachTileDrag, dropTargetIndex, moveInOrder, tileOrder, DRAG_THRESHOLD } from '../src/drag.js';
+import { attachDragReorder, dropTargetIndex, moveInOrder, itemOrder, DRAG_THRESHOLD } from '../src/drag.js';
+
+const ITEM = '.row.is-member';
+const HANDLE = '.handle';
 
 describe('dropTargetIndex — hit test, not nearest centre', () => {
   const rects = [
@@ -18,7 +25,7 @@ describe('dropTargetIndex — hit test, not nearest centre', () => {
     { left: 0, top: 110, right: 100, bottom: 210 },
   ];
 
-  it('finds the tile the pointer is inside', () => {
+  it('finds the item the pointer is inside', () => {
     expect(dropTargetIndex(rects, 50, 50)).toBe(0);
     expect(dropTargetIndex(rects, 150, 50)).toBe(1);
     expect(dropTargetIndex(rects, 50, 150)).toBe(2);
@@ -29,7 +36,7 @@ describe('dropTargetIndex — hit test, not nearest centre', () => {
     expect(dropTargetIndex(rects, 50, 105)).toBe(-1);
   });
 
-  it('returns -1 off the grid entirely', () => {
+  it('returns -1 off the list entirely', () => {
     expect(dropTargetIndex(rects, 900, 900)).toBe(-1);
     expect(dropTargetIndex(undefined, 5, 5)).toBe(-1);
   });
@@ -68,46 +75,50 @@ describe('moveInOrder', () => {
 // The controller
 // ------------------------------------------------------------------------------------
 
-const TILE = 100;
-const GAP = 10;
-const PER_ROW = 3;
+const ROW = 60;
 
-/** Slot geometry for the nth tile in a 3-wide grid of 100px tiles with 10px gaps. */
+/** The rect of the nth row in a stack of 60px rows. */
 function slotRect(index) {
-  const left = (index % PER_ROW) * (TILE + GAP);
-  const top = Math.floor(index / PER_ROW) * (TILE + GAP);
-  return { left, top, right: left + TILE, bottom: top + TILE, width: TILE, height: TILE };
+  const top = index * ROW;
+  return { left: 0, top, right: 340, bottom: top + ROW, width: 340, height: ROW };
 }
 
-/** The centre of a slot — where a finger would be to be "over" that position. */
+/** The centre of a row — where a finger would be to be "over" that position. */
 const centreOf = (index) => {
   const r = slotRect(index);
-  return { x: r.left + TILE / 2, y: r.top + TILE / 2 };
+  return { x: r.left + 20, y: r.top + ROW / 2 };
 };
 
-let grid;
+let list;
 let onReorder;
 
 /**
- * Build a grid of `ids` and teach every tile to report the rect of whatever slot it
+ * Build a list of `ids` and teach every row to report the rect of whatever slot it
  * currently occupies — plus whatever translate the drag has put on it, which is how the
  * real thing behaves and is what `place()` subtracts back off.
+ *
+ * `members` is how many of the rows are in the rotation. They come first, exactly as the
+ * settings screen sorts them, and the rest are there to prove a drag cannot reach them.
  */
-function buildGrid(ids) {
-  grid = document.createElement('div');
-  grid.className = 'grid grid--editing';
-  for (const id of ids) {
-    const a = document.createElement('a');
-    a.className = 'tile';
-    a.dataset.id = id;
-    grid.append(a);
-  }
-  document.body.append(grid);
+function buildList(ids, members = ids.length) {
+  list = document.createElement('ul');
+  list.className = 'pl-list';
+  ids.forEach((id, i) => {
+    const li = document.createElement('li');
+    li.className = i < members ? 'row is-member' : 'row';
+    li.dataset.id = id;
+    const handle = document.createElement('span');
+    handle.className = 'handle';
+    li.append(handle);
+    list.append(li);
+  });
+  document.body.append(list);
 
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-    const index = Array.from(this.parentElement?.children ?? []).indexOf(this);
+    const row = this.closest('li') ?? this;
+    const index = Array.from(row.parentElement?.children ?? []).indexOf(row);
     const base = slotRect(index < 0 ? 0 : index);
-    const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(this.style.transform ?? '');
+    const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(row.style.transform ?? '');
     const dx = match ? Number(match[1]) : 0;
     const dy = match ? Number(match[2]) : 0;
     return {
@@ -120,24 +131,30 @@ function buildGrid(ids) {
   });
 }
 
+const attach = (opts = {}) =>
+  attachDragReorder(list, { selector: ITEM, handle: HANDLE, onReorder, ...opts });
+
+const order = () => itemOrder(list, ITEM);
+const handleOf = (index) => list.children[index].querySelector(HANDLE);
+
 const pointer = (type, target, x, y, extra = {}) =>
   target.dispatchEvent(new window.PointerEvent(type, {
     bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0,
     clientX: x, clientY: y, ...extra,
   }));
 
-/** Press the tile at `from`, drag to the centre of `to`, drop. */
+/** Press the handle of the row at `from`, drag to the centre of `to`, drop. */
 function drag(fromIndex, toIndex, { drop = true } = {}) {
-  const tile = grid.children[fromIndex];
+  const row = list.children[fromIndex];
   const start = centreOf(fromIndex);
   const end = centreOf(toIndex);
-  pointer('pointerdown', tile, start.x, start.y);
+  pointer('pointerdown', handleOf(fromIndex), start.x, start.y);
   // A couple of intermediate moves, because the controller re-anchors on each one and a
   // single jump would not exercise that.
   pointer('pointermove', window, (start.x + end.x) / 2, (start.y + end.y) / 2);
   pointer('pointermove', window, end.x, end.y);
   if (drop) pointer('pointerup', window, end.x, end.y);
-  return tile;
+  return row;
 }
 
 beforeEach(() => {
@@ -146,37 +163,32 @@ beforeEach(() => {
   onReorder = vi.fn();
 });
 
-describe('dragging a tile to a new position', () => {
+describe('dragging a row to a new position', () => {
   beforeEach(() => {
-    buildGrid(['a', 'b', 'c', 'd', 'e']);
-    attachTileDrag(grid, { onReorder });
+    buildList(['a', 'b', 'c', 'd', 'e']);
+    attach();
   });
 
-  it('drags the last tile to the first position', () => {
+  it('drags the last row to the first position', () => {
     drag(4, 0);
-    expect(tileOrder(grid)).toEqual(['e', 'a', 'b', 'c', 'd']);
+    expect(order()).toEqual(['e', 'a', 'b', 'c', 'd']);
     expect(onReorder).toHaveBeenCalledWith(['e', 'a', 'b', 'c', 'd']);
   });
 
-  it('drags the first tile to the last position', () => {
+  it('drags the first row to the last position', () => {
     drag(0, 4);
-    expect(tileOrder(grid)).toEqual(['b', 'c', 'd', 'e', 'a']);
+    expect(order()).toEqual(['b', 'c', 'd', 'e', 'a']);
     expect(onReorder).toHaveBeenCalledWith(['b', 'c', 'd', 'e', 'a']);
   });
 
-  it('drags a middle tile forwards', () => {
+  it('drags a middle row forwards', () => {
     drag(2, 4);
-    expect(tileOrder(grid)).toEqual(['a', 'b', 'd', 'e', 'c']);
+    expect(order()).toEqual(['a', 'b', 'd', 'e', 'c']);
   });
 
-  it('drags a middle tile backwards', () => {
+  it('drags a middle row backwards', () => {
     drag(2, 0);
-    expect(tileOrder(grid)).toEqual(['c', 'a', 'b', 'd', 'e']);
-  });
-
-  it('crosses a row boundary — the second row is where a 3-wide grid gets interesting', () => {
-    drag(3, 1); // second row, first column -> first row, second column
-    expect(tileOrder(grid)).toEqual(['a', 'd', 'b', 'c', 'e']);
+    expect(order()).toEqual(['c', 'a', 'b', 'd', 'e']);
   });
 
   it('reports the whole order, not just what moved', () => {
@@ -190,114 +202,184 @@ describe('dragging a tile to a new position', () => {
   });
 });
 
-describe('gestures that are not a reorder', () => {
+describe('a drag starts on the handle and nowhere else', () => {
   beforeEach(() => {
-    buildGrid(['a', 'b', 'c']);
-    attachTileDrag(grid, { onReorder });
+    buildList(['a', 'b', 'c']);
+    attach();
   });
 
-  it('does not write anything when a tile is dragged away and dropped back', () => {
-    const tile = grid.children[1];
+  it('ignores a press on the row body — that gesture is the add/remove tap', () => {
+    const start = centreOf(2);
+    pointer('pointerdown', list.children[2], start.x, start.y);
+    pointer('pointermove', window, centreOf(0).x, centreOf(0).y);
+    pointer('pointerup', window, centreOf(0).x, centreOf(0).y);
+    expect(order()).toEqual(['a', 'b', 'c']);
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it('drags when the press is on the handle', () => {
+    drag(2, 0);
+    expect(onReorder).toHaveBeenCalledWith(['c', 'a', 'b']);
+  });
+});
+
+describe('rows that are not in the rotation', () => {
+  beforeEach(() => {
+    // Three members, then two rows that are only candidates.
+    buildList(['a', 'b', 'c', 'x', 'y'], 3);
+    attach();
+  });
+
+  it('leaves a non-member out of the order entirely', () => {
+    expect(order()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('cannot push a member below the divider, however far the finger goes', () => {
+    drag(0, 4); // way past the last member, into the candidates
+    // It lands at the end of the member block and stops there — a row cannot leave the
+    // rotation by being dragged out of it, because leaving is a tap on the row.
+    expect(order()).toEqual(['b', 'c', 'a']);
+    expect(Array.from(list.children).map((li) => li.dataset.id))
+      .toEqual(['b', 'c', 'a', 'x', 'y']);
+  });
+
+  it('does not move a non-member the finger passes over', () => {
+    drag(0, 3);
+    expect(Array.from(list.children).map((li) => li.dataset.id).slice(3)).toEqual(['x', 'y']);
+  });
+
+  it('still reorders freely within the member block', () => {
+    drag(2, 0);
+    expect(order()).toEqual(['c', 'a', 'b']);
+    expect(Array.from(list.children).map((li) => li.dataset.id))
+      .toEqual(['c', 'a', 'b', 'x', 'y']);
+  });
+});
+
+describe('gestures that are not a reorder', () => {
+  beforeEach(() => {
+    buildList(['a', 'b', 'c']);
+    attach();
+  });
+
+  it('does not write anything when a row is dragged away and dropped back', () => {
     const start = centreOf(1);
-    pointer('pointerdown', tile, start.x, start.y);
+    pointer('pointerdown', handleOf(1), start.x, start.y);
     pointer('pointermove', window, centreOf(2).x, centreOf(2).y);
-    expect(tileOrder(grid)).toEqual(['a', 'c', 'b']); // the preview did move
+    expect(order()).toEqual(['a', 'c', 'b']); // the preview did move
     pointer('pointermove', window, centreOf(1).x, centreOf(1).y);
     pointer('pointerup', window, centreOf(1).x, centreOf(1).y);
-    expect(tileOrder(grid)).toEqual(['a', 'b', 'c']);
+    expect(order()).toEqual(['a', 'b', 'c']);
     expect(onReorder).not.toHaveBeenCalled();
   });
 
   it('ignores a press that never moves past the threshold', () => {
-    const tile = grid.children[0];
+    const row = list.children[0];
     const start = centreOf(0);
-    pointer('pointerdown', tile, start.x, start.y);
-    pointer('pointermove', window, start.x + DRAG_THRESHOLD - 1, start.y);
-    pointer('pointerup', window, start.x + DRAG_THRESHOLD - 1, start.y);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
+    pointer('pointermove', window, start.x, start.y + DRAG_THRESHOLD - 1);
+    pointer('pointerup', window, start.x, start.y + DRAG_THRESHOLD - 1);
     expect(onReorder).not.toHaveBeenCalled();
-    expect(tile.classList.contains('is-dragging')).toBe(false);
+    expect(row.classList.contains('is-dragging')).toBe(false);
   });
 
-  it('ignores a press that did not start on a tile', () => {
-    pointer('pointerdown', grid, 500, 500);
+  it('ignores a press that did not start on a row at all', () => {
+    pointer('pointerdown', list, 5, 500);
     pointer('pointermove', window, 5, 5);
     pointer('pointerup', window, 5, 5);
     expect(onReorder).not.toHaveBeenCalled();
   });
 
   it('ignores a non-primary pointer and a right button', () => {
-    const tile = grid.children[0];
     const start = centreOf(0);
-    pointer('pointerdown', tile, start.x, start.y, { isPrimary: false });
-    pointer('pointerdown', tile, start.x, start.y, { button: 2 });
+    pointer('pointerdown', handleOf(0), start.x, start.y, { isPrimary: false });
+    pointer('pointerdown', handleOf(0), start.x, start.y, { button: 2 });
     pointer('pointermove', window, centreOf(2).x, centreOf(2).y);
     pointer('pointerup', window, centreOf(2).x, centreOf(2).y);
     expect(onReorder).not.toHaveBeenCalled();
-    expect(tileOrder(grid)).toEqual(['a', 'b', 'c']);
+    expect(order()).toEqual(['a', 'b', 'c']);
   });
 
-  it('leaves a finger in the gap between tiles alone', () => {
-    const tile = grid.children[0];
+  it('leaves a finger below the last row alone', () => {
     const start = centreOf(0);
-    pointer('pointerdown', tile, start.x, start.y);
-    pointer('pointermove', window, TILE + GAP / 2, start.y); // dead centre of the gap
-    pointer('pointerup', window, TILE + GAP / 2, start.y);
-    expect(tileOrder(grid)).toEqual(['a', 'b', 'c']);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
+    pointer('pointermove', window, start.x, 3 * ROW + 40); // past the end of the list
+    pointer('pointerup', window, start.x, 3 * ROW + 40);
+    expect(order()).toEqual(['a', 'b', 'c']);
     expect(onReorder).not.toHaveBeenCalled();
   });
 });
 
 describe('while the drag is happening', () => {
   beforeEach(() => {
-    buildGrid(['a', 'b', 'c']);
-    attachTileDrag(grid, { onReorder });
+    buildList(['a', 'b', 'c']);
+    attach();
   });
 
-  it('marks the tile and the grid, and clears both on drop', () => {
-    const tile = grid.children[0];
+  it('marks the row and the list, and clears both on drop', () => {
+    const row = list.children[0];
     const start = centreOf(0);
-    pointer('pointerdown', tile, start.x, start.y);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
     pointer('pointermove', window, centreOf(1).x, centreOf(1).y);
-    expect(tile.classList.contains('is-dragging')).toBe(true);
-    expect(grid.classList.contains('grid--dragging')).toBe(true);
+    expect(row.classList.contains('is-dragging')).toBe(true);
+    expect(list.classList.contains('is-reordering')).toBe(true);
     pointer('pointerup', window, centreOf(1).x, centreOf(1).y);
-    expect(tile.classList.contains('is-dragging')).toBe(false);
-    expect(grid.classList.contains('grid--dragging')).toBe(false);
-    expect(tile.style.transform).toBe('');
+    expect(row.classList.contains('is-dragging')).toBe(false);
+    expect(list.classList.contains('is-reordering')).toBe(false);
+    expect(row.style.transform).toBe('');
   });
 
-  it('keeps the tile under the finger across a reorder', () => {
-    const tile = grid.children[0];
+  it('says when a drag starts and finishes, so nothing repaints under the finger', () => {
+    const onDragChange = vi.fn();
+    document.body.replaceChildren();
+    buildList(['a', 'b', 'c']);
+    attach({ onDragChange });
+    drag(2, 0);
+    expect(onDragChange.mock.calls.map((c) => c[0])).toEqual([true, false]);
+  });
+
+  it('says nothing at all for a press that never became a drag', () => {
+    const onDragChange = vi.fn();
+    document.body.replaceChildren();
+    buildList(['a', 'b', 'c']);
+    attach({ onDragChange });
+    const start = centreOf(0);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
+    pointer('pointerup', window, start.x, start.y);
+    expect(onDragChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the row under the finger across a reorder', () => {
+    const row = list.children[0];
     const start = centreOf(0);
     const end = centreOf(2);
-    pointer('pointerdown', tile, start.x, start.y);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
     pointer('pointermove', window, end.x, end.y);
-    // Grabbed at the centre, so the tile's rect should be centred on the finger — which
-    // is only true if the translate was recomputed after the DOM moved it to slot 2.
-    const rect = tile.getBoundingClientRect();
-    expect(rect.left + TILE / 2).toBeCloseTo(end.x, 5);
-    expect(rect.top + TILE / 2).toBeCloseTo(end.y, 5);
+    // Grabbed at the vertical centre, so the row's rect should be centred on the finger —
+    // which is only true if the translate was recomputed after the DOM moved it to slot 2.
+    const rect = row.getBoundingClientRect();
+    expect(rect.top + ROW / 2).toBeCloseTo(end.y, 5);
   });
 
   it('recovers from a gesture that never got its pointerup', () => {
-    // A lost pointer must not wedge the grid: the next press has to work. Bailing out of
-    // pointerdown while a stale gesture is open is what makes a grid silently stop being
+    // A lost pointer must not wedge the list: the next press has to work. Bailing out of
+    // pointerdown while a stale gesture is open is what makes a list silently stop being
     // draggable, and nothing on screen says so.
     const start = centreOf(0);
-    pointer('pointerdown', grid.children[0], start.x, start.y);
+    pointer('pointerdown', handleOf(0), start.x, start.y);
     pointer('pointermove', window, centreOf(1).x, centreOf(1).y);
     // …and no pointerup ever arrives. A fresh drag still works.
-    expect(tileOrder(grid)).toEqual(['b', 'a', 'c']);
+    expect(order()).toEqual(['b', 'a', 'c']);
     drag(2, 0);
-    expect(tileOrder(grid)).toEqual(['c', 'b', 'a']);
+    expect(order()).toEqual(['c', 'b', 'a']);
     expect(onReorder).toHaveBeenLastCalledWith(['c', 'b', 'a']);
   });
 
   it('leaves no drag styling behind when a gesture is abandoned', () => {
-    const stale = grid.children[0];
-    pointer('pointerdown', stale, centreOf(0).x, centreOf(0).y);
+    const stale = list.children[0];
+    pointer('pointerdown', handleOf(0), centreOf(0).x, centreOf(0).y);
     pointer('pointermove', window, centreOf(1).x, centreOf(1).y);
-    pointer('pointerdown', grid.children[2], centreOf(2).x, centreOf(2).y);
+    pointer('pointerdown', handleOf(2), centreOf(2).x, centreOf(2).y);
     expect(stale.classList.contains('is-dragging')).toBe(false);
     expect(stale.style.transform).toBe('');
   });
@@ -305,24 +387,24 @@ describe('while the drag is happening', () => {
   it('commits on pointercancel rather than snapping back to where it was', () => {
     drag(2, 0, { drop: false });
     pointer('pointercancel', window, centreOf(0).x, centreOf(0).y);
-    expect(tileOrder(grid)).toEqual(['c', 'a', 'b']);
+    expect(order()).toEqual(['c', 'a', 'b']);
     expect(onReorder).toHaveBeenCalledWith(['c', 'a', 'b']);
   });
 });
 
 describe('detaching', () => {
   it('stops listening and cleans up a drag in progress', () => {
-    buildGrid(['a', 'b', 'c']);
-    const off = attachTileDrag(grid, { onReorder });
-    const tile = grid.children[0];
-    pointer('pointerdown', tile, centreOf(0).x, centreOf(0).y);
+    buildList(['a', 'b', 'c']);
+    const off = attach();
+    const row = list.children[0];
+    pointer('pointerdown', handleOf(0), centreOf(0).x, centreOf(0).y);
     pointer('pointermove', window, centreOf(1).x, centreOf(1).y);
     off();
-    expect(tile.classList.contains('is-dragging')).toBe(false);
+    expect(row.classList.contains('is-dragging')).toBe(false);
     pointer('pointerup', window, centreOf(1).x, centreOf(1).y);
     expect(onReorder).not.toHaveBeenCalled();
     // And a fresh gesture does nothing at all.
-    pointer('pointerdown', grid.children[0], centreOf(0).x, centreOf(0).y);
+    pointer('pointerdown', handleOf(0), centreOf(0).x, centreOf(0).y);
     pointer('pointermove', window, centreOf(2).x, centreOf(2).y);
     pointer('pointerup', window, centreOf(2).x, centreOf(2).y);
     expect(onReorder).not.toHaveBeenCalled();
