@@ -11,7 +11,11 @@
 //     just the text that came out.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderSettings, sortForDisplay, FLAG_LABELS, REST_HEADING } from '../src/settings-view.js';
+import {
+  renderSettings, sortForDisplay, FLAG_LABELS, REST_HEADING,
+  SHORTCUT_HEADING, SHORTCUT_NOTE, SHORTCUT_LINK_TEXT,
+} from '../src/settings-view.js';
+import { SHORTCUT_URL } from '../src/config.js';
 import {
   readRotation, writeRotation, buildCandidates, reorderRotation,
   addToRotation, removeFromRotation, isInRotation, toggleNofadein, toggleInorder,
@@ -81,6 +85,34 @@ describe('sortForDisplay', () => {
     sortForDisplay(list);
     expect(list.map((c) => c.id)).toEqual(['a', 'b']);
     expect(sortForDisplay(undefined)).toEqual([]);
+  });
+});
+
+describe('the link to the shortcut', () => {
+  const link = () => root.querySelector('.settings-link');
+
+  it('is on the screen even before anything is in the rotation', () => {
+    renderSettings(root, { loggedIn: false });
+    expect(link().textContent).toBe(SHORTCUT_LINK_TEXT);
+    expect(link().getAttribute('href')).toBe(SHORTCUT_URL);
+    expect(root.textContent).toContain(SHORTCUT_NOTE);
+  });
+
+  it('sits above the rotation, which can run to hundreds of rows', () => {
+    paint();
+    const headings = Array.from(root.querySelectorAll('h2')).map((h) => h.textContent);
+    expect(headings).toEqual(['Fade', SHORTCUT_HEADING, 'Rotation']);
+  });
+
+  it('opens away from the app, without handing the opener over', () => {
+    paint();
+    expect(link().target).toBe('_blank');
+    expect(link().rel).toContain('noopener');
+  });
+
+  it('can be pointed somewhere else without touching the view', () => {
+    renderSettings(root, { loggedIn: true, candidates: [], shortcutUrl: 'https://www.icloud.com/shortcuts/abc' });
+    expect(link().getAttribute('href')).toBe('https://www.icloud.com/shortcuts/abc');
   });
 });
 

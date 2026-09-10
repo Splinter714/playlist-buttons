@@ -60,9 +60,11 @@ in-place update.
 
 Both knobs are constants at the top of `build.mjs`:
 
-- `STEPS` — how many volume steps each ramp is divided into. 12 is a starting
-  guess, not a considered value. More steps sound smoother but each one costs a
-  volume-set and a wait. Tune it by ear.
+- `STEPS` — how many volume steps each ramp is divided into. Now 20, up from an
+  original guess of 12. More steps sound smoother but each one costs a
+  volume-set and a wait. Tune it by ear. It does not change the action count —
+  the ramp is a repeat block, not unrolled — so raising it costs runtime inside
+  the ramp, not import risk.
 - `DEVICE_TRANSFER_SETTLE_SECONDS` — how long to wait after handing playback to
   a device before retrying. Only hit on the error path.
 
@@ -103,7 +105,7 @@ is the shape I'd have been least sure of.
 
 **`upMs: 0` has no special branch.** Issue #4 step 8 says set volume straight to
 `V0` when `upMs` is 0. Here the normal fade-in loop runs, but every wait computes
-to 0 seconds, so all 12 volume sets fire back-to-back and land on `V0` in a few
+to 0 seconds, so all 20 volume sets fire back-to-back and land on `V0` in a few
 milliseconds. Behaviourally the same jump, and it avoids a numeric conditional
 whose plist shape I'd have been guessing at. If it turns out to be audible as a
 very fast ramp rather than an instant jump, that's the thing to fix.
@@ -289,7 +291,7 @@ the dyld shared cache), so these four could not be verified locally:
 | --- | --- | --- | --- |
 | 1 | `is.workflow.actions.setvolume` with parameter `WFVolume`, a 0–1 number | Import shows a broken/greyed placeholder where a "Set Volume" action should be, or it imports but volume never changes | Replace both Set Volume actions by hand (there are 3 — two in the ramps, one in the error path) |
 | 2 | `WFDeviceDetail: "Current Volume"` on Get Device Details | Action imports but the dropdown reads "Device Name" or similar; the fade jumps to a weird level or does nothing, because `V0` is text not a number | Open the action and pick Volume from its menu |
-| 3 | `is.workflow.actions.calculateexpression` with parameter `Input` | Broken placeholder where each ramp's calculation should be; the ramps do nothing | Retype the expression — it's `V0 × (12 − Repeat Index) ÷ 12` for the fade out and `V0 × Repeat Index ÷ 12` for the fade in |
+| 3 | `is.workflow.actions.calculateexpression` with parameter `Input` | Broken placeholder where each ramp's calculation should be; the ramps do nothing | Retype the expression — it's `V0 × (20 − Repeat Index) ÷ 20` for the fade out and `V0 × Repeat Index ÷ 20` for the fade in, using whatever `STEPS` is set to |
 | 4 | `Repeat Index` as a magic variable, referenced as `{Type: "Variable", VariableName: "Repeat Index"}` | Ramps run but every step sets the same volume, so the fade is a single step | Re-pick the Repeat Index variable inside the calculation |
 
 Two smaller ones:
@@ -307,8 +309,8 @@ Two smaller ones:
   as a string rather than a number it may reject the play call with a 400. The
   symptom is the alert firing on every tap with a message about a malformed
   body.
-- **`WFRepeatCount: 12`** as a plain integer on `repeat.count`. If wrong, the
-  repeat block imports with an empty or 1 count.
+- **`WFRepeatCount`** (20, from `STEPS`) as a plain integer on `repeat.count`.
+  If wrong, the repeat block imports with an empty or 1 count.
 
 If items 1–3 all import cleanly, the rest of the shortcut is built out of shapes
 lifted verbatim from a shortcut that works, and should be sound.

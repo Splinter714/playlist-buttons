@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 // ---------------------------------------------------------------------------
 
 /** Number of volume steps in each ramp. More steps = smoother, more overhead. */
-const STEPS = 12;
+const STEPS = 20;
 
 /** Seconds to wait after transferring to a device before retrying playback. */
 const DEVICE_TRANSFER_SETTLE_SECONDS = 0.5;
