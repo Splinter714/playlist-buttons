@@ -9,8 +9,14 @@ export const CLIENT_ID = 'b7db750c39cd449eb9c07493cf21e2c5';
 // Both of these must be registered on the Spotify app's settings page, byte for byte.
 // Spotify requires https for redirect URIs; the loopback IP is the one http exception,
 // and "localhost" is explicitly NOT accepted — it has to be 127.0.0.1.
+//
+// Both MUST include the '/playlist-buttons/' path. vite.config.js sets
+// base: '/playlist-buttons/' so the Pages build works, which means the dev server
+// serves the app at http://127.0.0.1:5173/playlist-buttons/ too — not at the root.
+// A redirect URI pointing at the root would send Spotify back to a path where the
+// app isn't served, and would not match what's registered.
 export const REDIRECT_URI_PROD = 'https://splinter714.github.io/playlist-buttons/';
-export const REDIRECT_URI_DEV = 'http://127.0.0.1:5173/';
+export const REDIRECT_URI_DEV = 'http://127.0.0.1:5173/playlist-buttons/';
 
 // No `streaming` scope: the web app never plays audio (see README). The native Spotify
 // app is the player; this is only a remote.
