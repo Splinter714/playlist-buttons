@@ -223,6 +223,18 @@ a JSON request carries `WFJSONValues` and nothing else.
 none either. Anything added to this generator later that reads a prior value needs the
 same treatment.
 
+### The shuffle flag is a string, not a boolean
+
+`400 Bad format for parameter state` on the shuffle call, on device. Shortcuts renders a
+boolean taken from a dictionary as `1`/`0`, and Spotify's
+`PUT /me/player/shuffle?state=` wants `true`/`false`. The app now sends `shuffle` as the
+string `"true"` or `"false"` in the payload, so what reaches the URL is already correct
+and the shortcut needs no conversion.
+
+This was guessed at when #10 was built, and the symptom predicted then was *silent* —
+playback starting normally with shuffle left however it was. It turned out to be a loud
+400 instead, which is the better outcome.
+
 ### Verified on device, 2026-09-09
 
 Three of these were settled by running probe shortcuts on the Mac and reading their

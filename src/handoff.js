@@ -84,7 +84,12 @@ export function buildHandoffPayload(playlist, { token, fadeMs, random } = {}) {
     token,
     context_uri: playlist?.uri,
     offset: inorder ? 0 : pickOffset(trackTotal(playlist), random),
-    shuffle: !inorder,
+    // A STRING, not a boolean. The shortcut interpolates this straight into
+    // `PUT /me/player/shuffle?state=`, and Shortcuts renders a JSON boolean from a
+    // dictionary as 1/0 — which Spotify rejects with
+    // `400 Bad format for parameter state`. Sending "true"/"false" as text means what
+    // reaches the URL is already what Spotify expects.
+    shuffle: inorder ? 'false' : 'true',
     downMs,
     upMs,
   };

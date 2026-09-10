@@ -79,8 +79,8 @@ describe('every tile is an anchor with its handoff href already in the DOM', () 
     const mixed = [items[0], { ...items[1], inorder: true }];
     renderGrid(root, { items: mixed, linkOptions: { token: TOKEN, random: () => 0.5 } });
     const [tavern, battle] = tiles().map(payloadOf);
-    expect(tavern).toMatchObject({ offset: 20, shuffle: true });
-    expect(battle).toMatchObject({ offset: 0, shuffle: false });
+    expect(tavern).toMatchObject({ offset: 20, shuffle: 'true' });
+    expect(battle).toMatchObject({ offset: 0, shuffle: 'false' });
   });
 
   it('keeps re-rolling the shuffled tiles while an in-order tile stays on track 1', () => {
