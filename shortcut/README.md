@@ -163,6 +163,34 @@ convention that 0 / 1 / 2 mean start / otherwise / end.
 `repeat.count` as an identifier is confirmed separately, out of the Shortcuts
 app binary.
 
+### The chaining rule — the thing that broke this twice
+
+**Generated plists do not inherit the implicit chaining the Shortcuts editor wires up
+for you.** Building by hand, each action's input box gets filled in as you drop it in.
+Emitting the same actions as a plist leaves every consumer pointing at a bare
+placeholder — the phone shows "Dictionary" or "URL" with nothing behind it, and the
+action either errors or silently yields empty.
+
+Jackson found this by opening the shortcut and noticing every Get Value for Key read
+"Dictionary" until he filled it in himself. It explains failures that were previously
+misattributed twice: first to the CLI test harness, then to Set Variable.
+
+So **every action that consumes a previous value must name its input explicitly.** In
+this generator that is handled at the helper level, via `prevRef()`:
+
+| Action | Parameter |
+| --- | --- |
+| Get Dictionary from Input | `WFInput` — `ExtensionInput`, or the previous action |
+| Get Value for Key | `WFInput` |
+| Get Item from List | `WFInput` |
+| Get Contents of URL | `WFURL` |
+| If (opening, `WFControlFlowMode: 0`) | `WFInput` |
+| Set Variable | `WFInput` |
+
+`End If` and `Otherwise` markers take no input, and Repeat's control-flow entries take
+none either. Anything added to this generator later that reads a prior value needs the
+same treatment.
+
 ### Verified on device, 2026-09-09
 
 Three of these were settled by running probe shortcuts on the Mac and reading their

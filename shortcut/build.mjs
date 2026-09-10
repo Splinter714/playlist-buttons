@@ -191,10 +191,27 @@ function getDictionaryFromInput({ fromPrevious = false } = {}) {
 
 /** Get Value for Key. Operates on the previous action's output. */
 function getValueForKey(key) {
+  const input = prevRef('Dictionary');
   const id = uuid();
-  act('is.workflow.actions.getvalueforkey', { UUID: id, WFDictionaryKey: key });
+  act('is.workflow.actions.getvalueforkey', { UUID: id, WFDictionaryKey: key, WFInput: input });
   return id;
 }
+
+/**
+ * An attachment pointing at whatever the previous action produced.
+ *
+ * Generated plists do NOT inherit the implicit chaining the Shortcuts editor wires up
+ * for you. Building by hand, each action's input box is filled in as you drop it in;
+ * emitting the same actions as a plist leaves every consumer pointing at a bare
+ * placeholder — the phone shows "Dictionary" or "URL" with nothing behind it, and the
+ * action fails or silently yields empty. So every action that eats a previous value
+ * has to name its input explicitly. Found the hard way: Jackson spotted that the
+ * Get Value for Key actions all read "Dictionary" until he filled them in by hand.
+ */
+const prevRef = (outputName) => ({
+  Value: { Type: 'ActionOutput', OutputUUID: lastUUID, OutputName: outputName },
+  WFSerializationType: 'WFTextTokenAttachment',
+});
 
 /**
  * Store the previous action's output under a name. The WFInput is not optional —
@@ -216,8 +233,13 @@ const getVariable = (name) =>
 
 /** Get Item from List — first item only, which is all we need. */
 function getFirstItem() {
+  const input = prevRef('List');
   const id = uuid();
-  act('is.workflow.actions.getitemfromlist', { UUID: id, WFItemSpecifier: 'First Item' });
+  act('is.workflow.actions.getitemfromlist', {
+    UUID: id,
+    WFItemSpecifier: 'First Item',
+    WFInput: input,
+  });
   return id;
 }
 
@@ -251,11 +273,11 @@ const showAlert = (title, message) =>
 const stopShortcut = () => act('is.workflow.actions.exit');
 
 /** URL action — Get Contents of URL takes its address from this action's output. */
-const urlAction = (url) =>
-  act('is.workflow.actions.url', {
-    UUID: uuid(),
-    WFURLActionURL: typeof url === 'string' ? url : url,
-  });
+function urlAction(url) {
+  const id = uuid();
+  act('is.workflow.actions.url', { UUID: id, WFURLActionURL: url });
+  return id;
+}
 
 /**
  * Get Contents of URL. Emits the preceding URL action too, so a request is one
@@ -264,8 +286,9 @@ const urlAction = (url) =>
  */
 function httpRequest({ url, method, headers, json }) {
   urlAction(url);
+  const target = prevRef('URL');
   const id = uuid();
-  const params = { Advanced: true, ShowHeaders: true, UUID: id };
+  const params = { Advanced: true, ShowHeaders: true, UUID: id, WFURL: target };
   if (method && method !== 'GET') params.WFHTTPMethod = method;
   if (headers) params.WFHTTPHeaders = dictField(headers);
   if (json) params.WFJSONValues = dictField(json);
@@ -276,12 +299,14 @@ function httpRequest({ url, method, headers, json }) {
 // Control flow. Each If / Repeat is a matched pair sharing a GroupingIdentifier;
 // WFControlFlowMode is 0 = start, 1 = otherwise, 2 = end.
 function ifContains(substring) {
+  const input = prevRef('Contents of URL');
   const group = uuid();
   act('is.workflow.actions.conditional', {
     GroupingIdentifier: group,
     WFCondition: 'Contains',
     WFConditionalActionString: tokenString(substring),
     WFControlFlowMode: 0,
+    WFInput: input,
   });
   return group;
 }
