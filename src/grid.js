@@ -1,12 +1,16 @@
 // The button grid: cover art tiles, three per row, name over the bottom of the art.
 //
-// Every tile is a real `<a>` with a real href, built before the tap — see handoff.js.
-// The click listener here records the now-playing marker and then gets out of the way:
-// it never calls preventDefault and never awaits, so the browser handles the tap as an
-// ordinary link navigation (#4).
+// Every tile is a real `<a>` whose href — the shortcut handoff — is fully built before
+// the tap (see handoff.js). The click listener here records the now-playing marker and
+// then gets out of the way: it never calls preventDefault and never awaits, so the
+// browser handles the tap as an ordinary link navigation (#4).
+//
+// Because the hrefs are built here, at render, every page load re-rolls each playlist's
+// random start offset. That is not incidental — every transition reloads the page, so
+// rendering IS the re-randomising step.
 
 import { SKELETON_COUNT } from './view.js';
-import { buildTileHref } from './handoff.js';
+import { resolveTileLink } from './handoff.js';
 import { recordNowPlaying } from './nowplaying.js';
 
 function el(tag, className, text) {
@@ -20,12 +24,18 @@ function clear(root) {
   root.replaceChildren();
 }
 
-function buildTile(playlist, isNowPlaying) {
-  const href = buildTileHref(playlist);
+function buildTile(playlist, isNowPlaying, linkOptions) {
+  const link = resolveTileLink(playlist, linkOptions);
   const a = el('a', 'tile');
-  a.href = href ?? '';
+  a.href = link.href ?? '';
   a.dataset.id = playlist.id ?? '';
-  a.setAttribute('aria-label', isNowPlaying ? `${playlist.name} (playing)` : playlist.name);
+  // Which kind of link this tile ended up with, so renderGrid can say so once at the top
+  // instead of a tile silently looking normal and doing something else on tap.
+  a.dataset.handoff = link.mode;
+  if (link.reason) a.dataset.handoffReason = link.reason;
+  const label = link.mode === 'fallback' ? `${playlist.name} (opens in Spotify)` : playlist.name;
+  a.setAttribute('aria-label', isNowPlaying ? `${playlist.name} (playing)` : label);
+  if (link.mode === 'fallback') a.classList.add('tile--nohandoff');
   if (isNowPlaying) {
     a.classList.add('is-playing');
     a.setAttribute('aria-current', 'true');
@@ -57,16 +67,44 @@ function buildTile(playlist, isNowPlaying) {
   return a;
 }
 
+/** What a returning `?err=1` says on the grid (#4). */
+export const HANDOFF_ERROR_TEXT =
+  'That did not play — the shortcut reported an error. Tap again to retry.';
+
+/** Shown when a tile could not be given a real handoff href — two reasons, two lines. */
+export const NO_TOKEN_TEXT =
+  'Not connected to Spotify right now, so these tiles just open the playlist — no fade.';
+export const NO_URI_TEXT =
+  'Some playlists are missing their Spotify link — those tiles open the playlist instead of fading into it.';
+
+function renderNotice(text, kind) {
+  const p = el('p', `grid-notice grid-notice--${kind}`, text);
+  p.setAttribute('role', 'status');
+  return p;
+}
+
 /**
  * @param {HTMLElement} root
- * @param {{items: Array, nowPlayingId: string|null}} state
+ * @param {object} state
+ * @param {Array} state.items
+ * @param {string|null} state.nowPlayingId
+ * @param {string|null} state.notice     e.g. the message for a returning `?err=1`
+ * @param {object} [state.linkOptions]   passed through to handoff.js (tests seed it)
  */
-export function renderGrid(root, { items, nowPlayingId = null } = {}) {
+export function renderGrid(root, { items, nowPlayingId = null, notice = null, linkOptions } = {}) {
   clear(root);
   const grid = el('div', 'grid');
+  const reasons = new Set();
   for (const p of items) {
-    grid.append(buildTile(p, p.id === nowPlayingId));
+    const tile = buildTile(p, p.id === nowPlayingId, linkOptions);
+    if (tile.dataset.handoff === 'fallback') reasons.add(tile.dataset.handoffReason);
+    grid.append(tile);
   }
+  if (notice) root.append(renderNotice(notice, 'error'));
+  // A missing token is about the whole grid; a missing URI is about particular tiles.
+  // Saying "not connected" for the second would send Jackson to the wrong place.
+  if (reasons.has('no-token')) root.append(renderNotice(NO_TOKEN_TEXT, 'warn'));
+  else if (reasons.size) root.append(renderNotice(NO_URI_TEXT, 'warn'));
   root.append(grid);
 }
 

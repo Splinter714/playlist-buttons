@@ -138,6 +138,24 @@ body {
   .tile--skeleton { animation: none; }
 }
 
+/* A line above the grid: the shortcut came back with an error (#4), or the tiles could
+   not be given a real handoff href. Quiet, one line, above the art rather than under it,
+   because both cases explain something about to happen on the very next tap. */
+.grid-notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #17171d;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.grid-notice--error { color: #ff8f8f; }
+.grid-notice--warn { color: var(--muted); }
+
+/* A tile with no handoff: it still opens the playlist on Spotify, but it is not the
+   button it normally is, and it should not look like one. */
+.tile--nohandoff { opacity: 0.62; }
+
 /* The empty-rotation message and the signed-out prompt. Both point somewhere: the
    first at the settings screen (#8), the second at the login. */
 .notice {

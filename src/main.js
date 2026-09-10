@@ -24,7 +24,8 @@ import {
   readFadeMs, writeFadeMs, MIN_FADE_MS, MAX_FADE_MS, FADE_STEP_MS,
 } from './settings.js';
 import { resolveView } from './view.js';
-import { renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTriggerRecorder } from './grid.js';
+import { renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTriggerRecorder, HANDOFF_ERROR_TEXT } from './grid.js';
+import { consumeHandoffError } from './handoff.js';
 import { renderSettings } from './settings-view.js';
 import { readNowPlaying, resolveNowPlaying } from './nowplaying.js';
 import { renderDebugAuth, renderDebugPlaylists, setDebugStatus, initDebugToggle } from './debug.js';
@@ -41,6 +42,9 @@ const state = {
   // A refresh has come back, successfully or not.
   settled: false,
   candidateCount: null,
+  // Set when this load is the return leg of a shortcut run that failed (#4). Read off
+  // the URL once, on load, and shown on the grid until the next tap takes us away.
+  notice: null,
 };
 
 function setAppStatus(text = '', kind = '') {
@@ -120,6 +124,7 @@ function paint() {
     renderGrid(appEl, {
       items: state.items,
       nowPlayingId: resolveNowPlaying(state.items, readNowPlaying()),
+      notice: state.notice,
     });
   } else if (view === 'skeleton') {
     renderSkeleton(appEl);
@@ -141,6 +146,14 @@ function update(playlists) {
 async function main() {
   initDebugToggle();
   purgeLegacyStorage();
+
+  // `x-error` sends the phone back here with `?err=1`. Read it and strip it before
+  // anything else touches the URL, so a later reload of this same address does not
+  // re-announce a failure that already happened.
+  if (consumeHandoffError()) {
+    state.notice = HANDOFF_ERROR_TEXT;
+    setDebugStatus('returned from the shortcut with ?err=1 — the transition failed', 'error');
+  }
 
   // One delegated listener for the life of the page: the grid re-renders, this does not.
   // It records the tap and returns — the anchor's own navigation does the rest (#4).
