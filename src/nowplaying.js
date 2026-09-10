@@ -37,8 +37,8 @@ export function clearNowPlaying() {
  * Resolve the stored record against the list actually being rendered.
  *
  * Returns the id only if that playlist is still in the rotation; a playlist that has
- * since lost its tag, been deleted, or been renamed out of the list leaves the grid
- * with no marker rather than a marker pointing at nothing.
+ * since been removed from the rotation, deleted or unfollowed leaves the grid with no
+ * marker rather than a marker pointing at nothing.
  *
  * @param {Array<{id: string}>} items
  * @param {{id: string}|null} record

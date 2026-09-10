@@ -20,12 +20,22 @@ export const REDIRECT_URI_DEV = 'http://127.0.0.1:5173/playlist-buttons/';
 
 // No `streaming` scope: the web app never plays audio (see README). The native Spotify
 // app is the player; this is only a remote.
+//
+// No modify scopes either, since #9: rotation membership, order and `nofadein` live in
+// localStorage and the app never writes anything back to Spotify. Read-only on playlists.
+// `playlist-read-collaborative` is deliberately left out to keep the consent screen
+// short — adding it later just costs one re-consent.
 export const SCOPES = [
   'playlist-read-private',
-  'playlist-modify-private',
-  'playlist-modify-public',
   'user-read-playback-state',
   'user-modify-playback-state',
+];
+
+// Scopes this app used to request and no longer does. A stored session that still carries
+// one of these predates #9 and has to be re-consented rather than reused — see scopes.js.
+export const REMOVED_SCOPES = [
+  'playlist-modify-private',
+  'playlist-modify-public',
 ];
 
 export const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';

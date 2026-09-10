@@ -37,18 +37,37 @@ One visible app switch per transition — Safari to Shortcuts and back via
 
 ## Membership and ordering
 
-Rotation membership lives in the Spotify playlist description, so it's managed from
-the Spotify app rather than a second place:
+Which playlists are in the rotation, what order they sit in, and which skip the
+fade-in all live in `localStorage`. The app never writes anything to Spotify — it only
+reads the playlist list.
 
+```js
+[{ id: '37i9…', nofadein: false }, { id: '4kQr…', nofadein: true }]
 ```
-Late night driving stuff. [game order:3 nofadein]
-```
 
-- presence of `[game ...]` — in the rotation
-- `order:N` — button position, rewritten when buttons are dragged
-- `nofadein` — optional; skip the fade-in and start at full volume
+The array order *is* the button order, so reordering is moving an element. It's an
+include list: nothing is in the rotation until it's added, from the setup page.
 
-Only works on playlists you own, which is fine — all of them are.
+This started out the other way round. Membership lived in the playlist description as
+a `[game order:3 nofadein]` tag, which was appealing because it's managed from the
+Spotify app, syncs to every device, and needs no second place to keep state. That
+rested on one assumption — that every playlist in the rotation is one you own — and
+it doesn't hold: some of them are other people's playlists, followed not owned, and
+**you cannot edit the description of a playlist you don't own**. A description tag
+physically cannot express membership for those, so the tag couldn't be the source of
+truth for the rotation and had to go entirely.
+
+What that costs, accepted knowingly: the rotation is per-browser. It doesn't sync to
+another device, and clearing Safari's site data loses it. Everything here runs on the
+one phone anyway, and rebuilding the list from the setup page is a couple of minutes'
+work, so there's no export or backup for now. Any `[game ...]` tags still sitting in
+descriptions are dead text — nothing reads them; delete them by hand if they annoy
+you.
+
+`GET /me/playlists` still pages through everything, but it's now the *candidate*
+list — the pool the setup page picks from, and the source of names and cover art —
+rather than the rotation itself. It already returns playlists you follow but don't
+own, which is the whole point.
 
 ## Shortcut contract
 
@@ -64,10 +83,16 @@ happens *after* the play call returns, so the outgoing track never jumps back up
 
 ## Scopes
 
-`playlist-read-private`, `playlist-modify-private`, `playlist-modify-public`,
-`user-read-playback-state`, `user-modify-playback-state`
+`playlist-read-private`, `user-read-playback-state`, `user-modify-playback-state`
 
-No `streaming` scope — the SDK isn't used.
+No `streaming` scope — the SDK isn't used. No modify scopes either: with membership
+local, nothing is ever written back to Spotify, so read-only on playlists is enough.
+`playlist-read-collaborative` is deliberately left off too, to keep the consent
+screen short; adding it later costs one re-consent.
+
+Dropping the two modify scopes is itself a re-consent. The app checks a stored
+session's granted scopes on load and sends it back through login if they predate the
+change, rather than running on a token that can still edit playlists.
 
 ## v1
 

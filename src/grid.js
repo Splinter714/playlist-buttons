@@ -82,14 +82,17 @@ export function renderSkeleton(root) {
 }
 
 /**
- * Nothing tagged. Deliberately plain and deliberately temporary: #8 replaces this with
- * a real setup page that lists every playlist and lets you pick. Not worth investing in.
+ * Empty rotation. Deliberately plain and deliberately temporary: #8 builds the setup page
+ * this points at, and replaces this message with it. Not worth investing in.
+ *
+ * Since #9 the rotation is a local include-list, so it starts empty and the setup page is
+ * the only way to fill it — there is no longer anything to do in the Spotify app.
  */
 export function renderEmpty(root) {
   clear(root);
   const box = el('div', 'notice');
-  box.append(el('p', null, 'No playlists in the rotation yet.'));
-  box.append(el('p', null, 'In the Spotify app, edit a playlist you own and add [game] to its description. It shows up here on the next load.'));
+  box.append(el('p', null, 'Nothing in the rotation yet.'));
+  box.append(el('p', null, 'Playlists get added from the setup page, which is not built yet.'));
   root.append(box);
 }
 

@@ -1,5 +1,6 @@
-// Spotify Web API calls. Read/write of playlist metadata only — this app never touches
-// playback from the browser (the shortcut does that, see README and issue #4).
+// Spotify Web API calls. READ ONLY, and only playlist metadata — this app never touches
+// playback from the browser (the shortcut does that, see README and issue #4), and since
+// #9 it never writes anything to Spotify at all: the rotation lives in localStorage.
 
 import { API_BASE } from './config.js';
 import { getAccessTokenSync, refreshTokens, logout } from './auth.js';
@@ -64,13 +65,11 @@ function safeJson(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-export function getMe() {
-  return request('/me');
-}
-
 /**
- * Page through every playlist the user has. All of them — a tagged playlist can sit
- * anywhere in the list, so stopping early is not an option.
+ * Page through every playlist the user has, owned or merely followed. All of them: since
+ * #9 this is the candidate list the rotation is picked from (and #8's setup page renders),
+ * so stopping early is not an option. Playlists that are followed but not owned are the
+ * entire reason membership moved out of descriptions.
  */
 export async function getAllPlaylists({ limit = 50, maxPages = 100 } = {}) {
   const items = [];
@@ -82,16 +81,4 @@ export async function getAllPlaylists({ limit = 50, maxPages = 100 } = {}) {
     url = data.next || null;
   }
   return items;
-}
-
-/**
- * Write a playlist's description back. `name` is sent unchanged alongside it: Spotify's
- * PUT for playlist details is happier with both fields present, and re-sending the
- * existing name is a no-op.
- */
-export function updatePlaylistDetails(id, { name, description }) {
-  const body = {};
-  if (name !== undefined) body.name = name;
-  if (description !== undefined) body.description = description;
-  return request(`/playlists/${id}`, { method: 'PUT', body });
 }
