@@ -339,10 +339,25 @@ function urlAction(url) {
  * Note `WFHTTPBodyType` is not set. In the reference it appears only on a Form body;
  * a JSON request carries `WFJSONValues` and nothing else.
  */
+/**
+ * Get Contents of URL, fetching the `url` action immediately above it.
+ *
+ * WFURL is the url action's output embedded as a token INSIDE a text string — a
+ * WFTextTokenString whose whole string is one attachment. Not a bare
+ * WFTextTokenAttachment (that gave "No URL Specified"), not the URL inline (displayed
+ * fine, never fired), and not omitted (does not chain). This is the fourth shape and
+ * the one read straight out of the working hand-fixed shortcut with
+ * `npm run shortcut:inspect`, rather than reasoned about.
+ */
 function httpRequest({ url, method, headers, json }) {
-  urlAction(url);
+  const urlId = urlAction(url);
   const id = uuid();
-  const params = { Advanced: true, ShowHeaders: true, UUID: id };
+  const params = {
+    Advanced: true,
+    ShowHeaders: true,
+    UUID: id,
+    WFURL: tokenString(outRef(urlId, 'URL')),
+  };
   if (method && method !== 'GET') params.WFHTTPMethod = method;
   if (headers) params.WFHTTPHeaders = dictField(headers);
   if (json) params.WFJSONValues = dictField(json);

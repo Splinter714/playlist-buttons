@@ -310,12 +310,22 @@ The second is the dangerous one: it *looks* right when you open the shortcut. Ja
 caught it by noticing playback stopped changing and tracing it back to when the URL
 handling changed.
 
-> **UNRESOLVED.** The third shape — the one generated now — does not import with its
-> URLs linked either, and the shortcut in use is a hand-fixed one. So all three shapes
-> tried so far are wrong, and the reference this one was copied from was a different
-> Spotify shortcut rather than a working PlaylistButtons. Do not try a fourth from
-> reasoning; read the right shape out of the hand-fixed one with `shortcut:inspect`
-> (below) and copy it.
+> **Resolved 2026-09-10, from evidence rather than a guess.** `WFURL` on Get Contents of
+> URL is the `url` action's output embedded as a token *inside a text string*: a
+> `WFTextTokenString` whose entire string is one attachment, `{0, 1}` → `{Type:
+> "ActionOutput", OutputUUID: <url action's UUID>, OutputName: "URL"}`. Read straight out
+> of the hand-fixed working shortcut via `npm run shortcut:inspect` against the unsigned
+> plist that an iCloud share link serves — the inspect tool's first real use, and it
+> found the one missing key in one line.
+>
+> That makes four shapes tried in total; only this one imports with its URLs linked:
+>
+> | Shape | Result |
+> | --- | --- |
+> | `WFURL` as a bare `WFTextTokenAttachment` to the url action | "No URL Specified" |
+> | `WFURL` holding the URL inline, no url action | Displayed correctly, never fired |
+> | No `WFURL`, relying on chaining | Does not chain |
+> | `WFURL` = token string containing the url action's output | **Works** |
 
 `WFHTTPBodyType` is not set anywhere. In the reference it appears only on a Form body;
 a JSON request carries `WFJSONValues` and nothing else.
