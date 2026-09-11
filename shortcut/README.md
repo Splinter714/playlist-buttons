@@ -247,7 +247,7 @@ which happens to make the same `PUT /me/player/play` call with a
 | Comment | `comment` | `WFCommentActionText` |
 | Stop Shortcut | `exit` | — |
 | Get Device Details | `getdevicedetails` | **identifier only** — see below |
-| Get Item from List | `getitemfromlist` | `WFItemSpecifier` (key confirmed, value string is a guess) |
+| Get Item from List | `getitemfromlist` | `WFItemSpecifier` (`'First Item'` — no longer emitted since the device-recovery branch was removed) |
 
 The text-token serialisation (`WFTextTokenString` with `attachmentsByRange`,
 `WFTextTokenAttachment`, `WFDictionaryFieldValue`, the `WFItemType` codes, and
@@ -416,30 +416,24 @@ The only real test is tapping a tile in the web app, where the
 
 ### Guesses — check these first if the import misbehaves
 
-Set Volume and Get Device Details' parameter list don't ship on macOS in any
-readable form (they're not in `WorkflowKit.framework`, the Shortcuts binary, or
-the dyld shared cache), so these four could not be verified locally:
+**Every guess this table ever held is now confirmed by a full working run on device
+(2026-09-10):** fade out, playlist change, shuffle, fade in, return to Safari, in that
+order, with nothing fixed by hand. The rows are kept as a record of what was uncertain
+and how each one resolved, so they are not re-litigated.
 
-| # | Guess | Symptom if wrong | Fix |
-| --- | --- | --- | --- |
-| 1 | `is.workflow.actions.setvolume` with parameter `WFVolume`, a 0–1 number | Import shows a broken/greyed placeholder where a "Set Volume" action should be, or it imports but volume never changes | Replace both Set Volume actions by hand (there are 3 — two in the ramps, one in the error path) |
-| 2 | `WFDeviceDetail: "Current Volume"` on Get Device Details | Action imports but the dropdown reads "Device Name" or similar; the fade jumps to a weird level or does nothing, because `V0` is text not a number | Open the action and pick Volume from its menu |
-| 3 | `is.workflow.actions.calculateexpression` with parameter `Input` | Broken placeholder where each ramp's calculation should be; the ramps do nothing | Retype the expression — it's `V0 × (20 − Repeat Index) ÷ 20` for the fade out and `V0 × Repeat Index ÷ 20` for the fade in, using whatever `STEPS` is set to |
-| 4 | `Repeat Index` as a magic variable, referenced as `{Type: "Variable", VariableName: "Repeat Index"}` | Ramps run but every step sets the same volume, so the fade is a single step | Re-pick the Repeat Index variable inside the calculation |
-| 5 | `is.workflow.actions.openapp` carrying both `WFAppIdentifier` and `WFSelectedApp` for `com.apple.mobilesafari` | Broken or blank placeholder where an Open App action should be, or it imports but shows no app — you sit in Shortcuts for the whole fade, exactly as before, and only `x-success` brings you back | Open the action and pick Safari from its menu, or set `RETURN_VIA = 'url'` |
-| 6 | `is.workflow.actions.openurl` taking `WFInput` from a `url` action above it — only emitted when `RETURN_VIA = 'url'` | Same symptom as above: no early return | Open the action and re-pick the URL, or set `RETURN_VIA = false` and live with the app switch |
+| # | Was a guess | How it resolved |
+| --- | --- | --- |
+| 1 | `setvolume` / `WFVolume` as a 0–1 number | Both ramps audibly work. Confirmed. |
+| 2 | `WFDeviceDetail: "Current Volume"` | Probe returned `0.1875` at 19%; restore-to-V0 works. Confirmed. |
+| 3 | `calculateexpression` / `Input` | Probe returned `4` for `2 + 2`; ramps run. Confirmed. |
+| 4 | `Repeat Index` as `{Type: "Variable", VariableName: "Repeat Index"}` | Fade is a smooth ramp, not one jump. Confirmed. |
+| 5 | `openapp` with `WFAppIdentifier` + `WFSelectedApp` for Safari | Safari opens at the end of every run. Confirmed. |
+| 6 | `openurl` taking `WFInput` from a `url` action | Only emitted for `RETURN_VIA = 'url'`, which is not in use. **Still unverified** — the one shape here nobody has run. |
 
-Two smaller ones:
-
-- **`WFItemType: 3` for `offset.position`.** If Spotify gets `"position": "47"`
-  as a string rather than a number it may reject the play call with a 400. The
-  symptom is the alert firing on every tap with a message about a malformed
-  body.
-- **`WFRepeatCount`** (20, from `STEPS`) as a plain integer on `repeat.count`.
-  If wrong, the repeat block imports with an empty or 1 count.
-
-If items 1–3 all import cleanly, the rest of the shortcut is built out of shapes
-lifted verbatim from a shortcut that works, and should be sound.
+**If a future import misbehaves, the cause is almost certainly a new action or a
+changed shape, not one of these.** Run `npm run shortcut:inspect` against a shortcut
+that works before guessing: that is what settled the last unresolved shape in one line,
+after three rounds of reasoning got it wrong.
 
 ### If an action does import broken
 
