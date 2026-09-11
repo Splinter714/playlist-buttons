@@ -38,14 +38,10 @@ const STEPS = 20;
  *           reloads it.
  *   false   Neither. Back to `x-success` at the end of the run being the only return.
  *
- * `x-success` is sent regardless and still fires when the run completes, so the app is
- * reached either way and this only decides whether it is reached early. That end-of-run
- * reload is also what re-rolls every tile's random start offset, which is why 'app' not
- * reloading costs nothing.
- *
- * Worth knowing before trusting any of this: what runs after the return is the fade-in,
- * so a run iOS suspends in the background leaves system volume part way down with the
- * music still playing.
+ * This is the only return there is — there is no x-success on the handoff URL — and it
+ * runs last, after the fade-in, so nothing audible is left to a backgrounded run. The
+ * price is standing in Shortcuts for upMs longer; the reward is a transition that cannot
+ * be cut short by iOS suspending the run.
  */
 const RETURN_VIA = 'app';
 
@@ -550,29 +546,6 @@ httpRequest({
   headers: authHeaders(),
 });
 
-// 6. Go back to Safari NOW, with the new playlist already playing, and let the fade-in
-//    run behind it. The alternative is standing in Shortcuts for the whole transition —
-//    downMs + upMs plus request latency, which at a 2s fade is most of five seconds.
-//
-//    In 'url' mode the address comes from the input rather than being baked in here, so
-//    the same shortcut serves the dev server and the Pages build without knowing about
-//    either. 'app' needs no address at all — Safari is already on the right tab.
-//
-//    `x-success` is still on the handoff URL and still fires when the run completes. That
-//    is deliberate belt-and-braces: if this action turns out not to switch apps, or the
-//    run is suspended before it, the transition still ends up back in the app exactly as
-//    it did before. It is also the reload that re-rolls every tile's random offset, which
-//    the 'app' return deliberately does not do.
-if (RETURN_VIA === 'app') {
-  // Safari, not the web app: Open App does not list installed web apps, and the app is
-  // used from a Safari tab anyway. No reload, so the grid comes back exactly as it was.
-  comment('Back to the app now; the fade-in continues behind it');
-  openApp('com.apple.mobilesafari', 'Safari');
-} else if (RETURN_VIA === 'url') {
-  comment('Back to the app now; the fade-in continues behind it');
-  openUrl(tokenString(varRef('return_url')));
-}
-
 // 7. No error recovery, deliberately.
 //
 //    There used to be a "if the play call returned an error, find a device and retry
@@ -591,7 +564,7 @@ if (RETURN_VIA === 'app') {
 //    Tracked separately rather than left as a comment — see the issue referenced in
 //    shortcut/README.md.
 
-// 8. Fade back in to V0. upMs of 0 makes every wait 0, so the ramp collapses to
+// 7. Fade back in to V0. upMs of 0 makes every wait 0, so the ramp collapses to
 //    an effectively instant jump back to V0 — which is what nofadein wants,
 //    without needing a separate branch.
 ramp({
@@ -599,6 +572,31 @@ ramp({
   durationVar: 'upMs',
   fractionParts: [varRef('V0'), ' * ', varRef('Repeat Index'), ` / ${STEPS}`],
 });
+
+// 8. Back to Safari, with the whole transition finished.
+//
+//    This used to sit right after the play call, so the phone was back in Safari while
+//    the fade-in ran behind it. Jackson, 2026-09-10, after the first fully working run:
+//    "move the 'open safari' to the end". Doing the fade-in first costs upMs of standing
+//    in Shortcuts, and buys a transition that cannot be cut short: an early return handed
+//    the fade-in to a backgrounded run, and a run iOS suspends there leaves system volume
+//    part way down with the music playing quietly and nothing on screen saying so. With
+//    the switch last, everything audible is done before the app changes.
+//
+//    Safari, not the web app: Open App does not list installed web apps, and the app is
+//    used from a Safari tab anyway. No reload, so the grid comes back exactly as it was;
+//    main.js repaints on visibilitychange, which is what re-rolls each tile's offset.
+//
+//    There is no x-success on the handoff URL any more (f45677c), so this is the ONLY
+//    return. In 'url' mode the address comes from the input, so one shortcut serves the
+//    dev server and the Pages build. `false` leaves you in Shortcuts.
+if (RETURN_VIA === 'app') {
+  comment('Transition done; back to Safari');
+  openApp('com.apple.mobilesafari', 'Safari');
+} else if (RETURN_VIA === 'url') {
+  comment('Transition done; back to the app');
+  openUrl(tokenString(varRef('return_url')));
+}
 
 // 9. End on an empty result.
 //

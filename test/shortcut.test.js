@@ -87,15 +87,16 @@ describe('the generated shortcut takes shuffle from its input (#10)', () => {
     expect(delay).toBeLessThan(shuffle);
   });
 
-  it('returns to the app before the fade-in rather than at the end of the run', () => {
-    // x-success only fires when the whole run finishes, which is the wait this avoids.
-    // So there is an explicit switch-apps action, and it sits after the play call and
-    // before the fade-in ramp — the order is the whole point.
+  it('returns to the app after the fade-in, as the last thing before the run ends', () => {
+    // There is no x-success on the handoff URL, so this switch-apps action is the only
+    // return. It sits after the fade-in ramp so nothing audible is left to a backgrounded
+    // run — an early return handed the fade-in to one, and iOS suspending it left the
+    // volume part way down. The order is the whole point.
     const openApp = plist.indexOf('is.workflow.actions.openapp');
-    const play = plist.indexOf('me/player/shuffle');
     const fadeIn = plist.lastIndexOf('is.workflow.actions.setvolume');
-    expect(openApp).toBeGreaterThan(play);
-    expect(openApp).toBeLessThan(fadeIn);
+    const end = plist.indexOf('is.workflow.actions.exit');
+    expect(openApp).toBeGreaterThan(fadeIn);
+    expect(openApp).toBeLessThan(end);
     expect(plist).toContain('com.apple.mobilesafari');
   });
 
