@@ -30,7 +30,7 @@ import {
   renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTileHandler,
   TRANSITION_FAILED_TEXT, NO_VOLUME_TEXT, NO_PLAYER_TEXT,
 } from './grid.js';
-import { startTransition, FADED, UNFADED, FAILED } from './transition.js';
+import { startTransition, fadeLatencyNote, FADED, UNFADED, FAILED } from './transition.js';
 import { renderSettings } from './settings-view.js';
 import { readNowPlaying, resolveNowPlaying } from './nowplaying.js';
 import { renderDebugAuth, renderDebugPlaylists, setDebugStatus, initDebugToggle } from './debug.js';
@@ -124,6 +124,9 @@ function paintSettings() {
     },
     onDragChange: (active) => { state.dragging = active; },
     onFadeChange: (ms) => writeFadeMs(ms),
+    // Read from the round trip the last transition measured and stored — the settings
+    // screen never makes a request of its own to work this out (#13 playtest).
+    fadeNoteFor: (ms) => fadeLatencyNote(ms),
     onLogin: () => beginLogin(),
   });
 }

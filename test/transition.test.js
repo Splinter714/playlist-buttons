@@ -24,8 +24,10 @@ globalThis.localStorage = {
 };
 
 const {
-  resolvePlaybackPlan, resolveTile, pickOffset, rampLevels, rampVolume,
-  startTransition, resetTransitions, FADE_STEPS, FADED, UNFADED, SUPERSEDED, FAILED,
+  resolvePlaybackPlan, resolveTile, pickOffset, rampLevels, rampPlan, rampVolume,
+  loudnessLevel, stepsWithin, fadeLatencyNote, readLatencyMs, writeLatencyMs,
+  startTransition, resetTransitions, FADE_STEPS, FADE_CONCURRENCY, LOUDNESS_EXPONENT,
+  MIN_SMOOTH_STEPS, FADED, UNFADED, SUPERSEDED, FAILED,
 } = await import('../src/transition.js');
 const { SETTINGS_KEY } = await import('../src/settings.js');
 
@@ -75,6 +77,71 @@ function volumeRecorder(clock, rtt = 0) {
 
 /** Let any number of chained microtasks run. The fake clock never yields to a timer. */
 const flush = async (n = 200) => { for (let i = 0; i < n; i++) await Promise.resolve(); };
+
+/**
+ * A fake NETWORK, which `makeClock` above cannot be: its `setVolume` charges the round
+ * trip where the write is ISSUED, which is the same thing as being serial and so can
+ * never show what overlapping writes buy. Here a write costs nothing to send and LANDS
+ * `rtt` later, and time only moves when the driver below releases the next scheduled
+ * event — a plain discrete-event simulation.
+ *
+ * It records both halves, because they are different questions: `issued` is what the
+ * pacer decided to do, `landed` is what the speaker actually did.
+ */
+function makeNet({ rtt = 300, slow = null } = {}) {
+  const net = {
+    t: 0,
+    timers: [],
+    issued: [],
+    landed: [],
+    inFlight: 0,
+    maxInFlight: 0,
+    now: () => net.t,
+    at: (when) => new Promise((resolve) => { net.timers.push({ when, resolve }); }),
+    sleep: (ms) => net.at(net.t + Math.max(0, Number(ms) || 0)),
+    setVolume: (v) => {
+      // `slow` is one write index that comes back late, to prove ordering is handled.
+      const cost = slow && slow.index === net.issued.length ? slow.rtt : rtt;
+      net.issued.push({ level: v, at: net.t });
+      net.inFlight += 1;
+      net.maxInFlight = Math.max(net.maxInFlight, net.inFlight);
+      return net.at(net.t + cost).then(() => {
+        net.inFlight -= 1;
+        net.landed.push({ level: v, at: net.t });
+      });
+    },
+  };
+  return net;
+}
+
+/** Run a ramp against `net`, releasing scheduled events in time order until it settles. */
+async function runNet(net, promise) {
+  let done = false;
+  const settled = promise.then(
+    (v) => { done = true; return v; },
+    (e) => { done = true; throw e; },
+  );
+  settled.catch(() => {});
+  for (let guard = 0; guard < 2000 && !done; guard++) {
+    await flush(30);
+    if (done || !net.timers.length) break;
+    net.timers.sort((a, b) => a.when - b.when);
+    const next = net.timers.shift();
+    net.t = Math.max(net.t, next.when);
+    next.resolve();
+  }
+  await flush(60);
+  return settled;
+}
+
+/** Spacing of a sequence in PERCEIVED loudness, which is what "even" has to mean here. */
+const perceivedGaps = (levels) => {
+  const loud = levels.map((v) => Math.pow(v, LOUDNESS_EXPONENT));
+  const gaps = [];
+  for (let i = 1; i < loud.length; i++) gaps.push(Math.abs(loud[i - 1] - loud[i]));
+  return gaps;
+};
+const evenness = (gaps) => Math.max(...gaps) / Math.min(...gaps);
 
 /** A player that accepts remote volume, which is the whole premise of #13. */
 function fakeApi({ volume = 70, supportsVolume = true, playerState, rtt = 0, clock } = {}) {
@@ -210,28 +277,89 @@ describe('what kind of tile a playlist gets', () => {
   });
 });
 
-describe('ramp levels', () => {
-  it('walks down in twelve even steps and lands exactly on zero', () => {
+describe('ramp levels, on the equal-loudness curve', () => {
+  // These were [92, 83, 75, ... 8, 0] when the ramp stepped linearly through
+  // volume_percent. That is what sounded choppy at 3s (#13 playtest): a linear fade is
+  // nearly inaudible at the top and falls off a cliff at the bottom, so the writes are
+  // spent where they are not heard. The curve below is the same twelve writes, placed so
+  // that each one is the same size TO THE EAR.
+  it('walks down the curve and lands exactly on zero', () => {
     expect(rampLevels(100, 0, FADE_STEPS))
-      .toEqual([92, 83, 75, 67, 58, 50, 42, 33, 25, 17, 8, 0]);
+      .toEqual([87, 74, 62, 51, 41, 31, 23, 16, 10, 5, 2, 0]);
   });
 
   it('walks back up to the captured volume, not to 100', () => {
     const up = rampLevels(0, 70, FADE_STEPS);
     expect(up).toHaveLength(12);
-    expect(up[0]).toBe(6);
+    expect(up[0]).toBe(1);
     expect(up.at(-1)).toBe(70);
   });
 
   it('scales through the starting volume rather than through absolute fractions', () => {
-    // From 60% the first step of a fade OUT must go down, not up to 92%.
-    expect(rampLevels(60, 0, FADE_STEPS)[0]).toBe(55);
+    // From 60% the first step of a fade OUT must go down, not up to 87%.
+    expect(rampLevels(60, 0, FADE_STEPS)[0]).toBe(52);
   });
 
   it('has one named step count for both directions', () => {
     expect(FADE_STEPS).toBe(12);
     expect(rampLevels(100, 0)).toHaveLength(FADE_STEPS);
     expect(rampLevels(0, 100)).toHaveLength(FADE_STEPS);
+  });
+
+  it('is anchored exactly at both ends, in both directions', () => {
+    // No off-by-one: a fade-out that stopped at 1% would leave the music faintly audible
+    // under the new playlist, and a fade-in that stopped at 69% would quietly turn the
+    // user's volume down a notch on every tap.
+    expect(loudnessLevel(70, 0, 0)).toBe(70);
+    expect(loudnessLevel(70, 0, 1)).toBe(0);
+    expect(loudnessLevel(0, 70, 0)).toBe(0);
+    expect(loudnessLevel(0, 70, 1)).toBe(70);
+    expect(rampLevels(70, 0).at(-1)).toBe(0);
+    expect(rampLevels(0, 70).at(-1)).toBe(70);
+  });
+
+  it('never repeats a level, from any starting volume, in either direction', () => {
+    // volume_percent is an integer, so the quiet end of the curve rounds to the same
+    // number repeatedly. A write that changes nothing is a wasted round trip — and the
+    // round trip is the thing the step rate is bounded by.
+    for (let v = 1; v <= 100; v++) {
+      for (const levels of [rampLevels(v, 0), rampLevels(0, v)]) {
+        for (let i = 1; i < levels.length; i++) {
+          expect(levels[i]).not.toBe(levels[i - 1]);
+        }
+      }
+      expect(rampLevels(v, 0).at(-1)).toBe(0);
+      expect(rampLevels(0, v).at(-1)).toBe(v);
+    }
+  });
+
+  it('spaces the steps more evenly in PERCEIVED loudness than a linear ramp does', () => {
+    const linear = [100];
+    for (let i = 1; i <= FADE_STEPS; i++) linear.push(Math.round(100 - (100 * i) / FADE_STEPS));
+    const curved = [100, ...rampLevels(100, 0, FADE_STEPS)];
+
+    // The property, not the numbers: on the curve every step is about the same size to
+    // the ear, so the biggest and smallest are close together. On a linear ramp the last
+    // step is several times the first.
+    expect(evenness(perceivedGaps(curved))).toBeLessThan(2);
+    expect(evenness(perceivedGaps(linear))).toBeGreaterThan(4);
+    expect(evenness(perceivedGaps(curved)))
+      .toBeLessThan(evenness(perceivedGaps(linear)) / 2);
+  });
+
+  it('spends more of the fade quiet than a linear ramp, by a tunable exponent', () => {
+    expect(LOUDNESS_EXPONENT).toBeGreaterThan(0);
+    expect(LOUDNESS_EXPONENT).toBeLessThan(1);
+    // Halfway through a 100 -> 0 fade the curve is well below the linear halfway point.
+    expect(loudnessLevel(100, 0, 0.5)).toBeLessThan(50);
+  });
+
+  it('moves the final write to the end when the curve reaches it early', () => {
+    // From 3% most of the curve rounds to the same few integers, so 0 is first reached
+    // two thirds of the way in. Firing it there would leave the last third silent.
+    const plan = rampPlan(3, 0, FADE_STEPS);
+    expect(plan.map((step) => step.level)).toEqual([2, 1, 0]);
+    expect(plan.at(-1).at).toBe(1);
   });
 });
 
@@ -323,6 +451,133 @@ describe('pacing the ramp against the wall clock', () => {
   });
 });
 
+describe('overlapping writes, so the step rate is not one per round trip', () => {
+  // The choppiness Jackson heard at 3s was this: a strictly serial ramp cannot put two
+  // writes closer together than one round trip, so at 250ms deadlines and 300ms round
+  // trips it dropped levels to stay on schedule. These run the SAME ramp against the same
+  // simulated network with one write in flight and with FADE_CONCURRENCY, which is the
+  // only honest way to state the improvement.
+  const ramp = (net, concurrency) => rampVolume({
+    from: 70, to: 0, durationMs: 3000, concurrency,
+    setVolume: net.setVolume, now: net.now, sleep: net.sleep,
+  });
+
+  it('lands all twelve levels at 300ms round trips, where serial managed ten', async () => {
+    const serial = makeNet({ rtt: 300 });
+    await runNet(serial, ramp(serial, 1));
+    const overlapped = makeNet({ rtt: 300 });
+    await runNet(overlapped, ramp(overlapped, FADE_CONCURRENCY));
+
+    // Serial cannot land more than one write per round trip, so a 3s fade is ten.
+    const serialInsideFade = serial.landed.filter((w) => w.at <= 3000);
+    expect(serialInsideFade.length).toBeLessThanOrEqual(10);
+    expect(serial.t).toBeGreaterThan(3300); // and it runs past the fade to finish
+
+    expect(overlapped.landed).toHaveLength(FADE_STEPS);
+    expect(overlapped.landed.length).toBeGreaterThan(serialInsideFade.length);
+    // Bought by overlapping, not by overrunning.
+    expect(overlapped.t).toBeLessThanOrEqual(3000 + 300);
+    expect(overlapped.maxInFlight).toBeLessThanOrEqual(FADE_CONCURRENCY);
+  });
+
+  it('keeps a usable number of steps where serial collapsed, at 500ms', async () => {
+    const serial = makeNet({ rtt: 500 });
+    await runNet(serial, ramp(serial, 1));
+    const overlapped = makeNet({ rtt: 500 });
+    await runNet(overlapped, ramp(overlapped, FADE_CONCURRENCY));
+
+    expect(serial.landed.filter((w) => w.at <= 3000).length).toBeLessThanOrEqual(6);
+    expect(overlapped.landed.length).toBeGreaterThanOrEqual(11);
+  });
+
+  it('never has more writes in flight than the cap, however slow the network', async () => {
+    const net = makeNet({ rtt: 1500 });
+    await runNet(net, ramp(net, FADE_CONCURRENCY));
+    expect(net.maxInFlight).toBeLessThanOrEqual(FADE_CONCURRENCY);
+    expect(net.landed.at(-1).level).toBe(0);
+  });
+
+  it('writes the final level last and alone, even when an earlier one comes back late', async () => {
+    // These are ABSOLUTE writes, so a straggler landing after the last one would leave the
+    // volume somewhere the ramp never meant to end. The final level is written only after
+    // everything else has come back.
+    const net = makeNet({ rtt: 300, slow: { index: 4, rtt: 2400 } });
+    await runNet(net, ramp(net, FADE_CONCURRENCY));
+
+    expect(net.landed.at(-1).level).toBe(0);
+    expect(net.landed.filter((w) => w.level === 0)).toHaveLength(1);
+    const zeroAt = net.landed.at(-1).at;
+    expect(net.landed.every((w) => w.at <= zeroAt)).toBe(true);
+    // The straggler is still the straggler — it just cannot land after the end.
+    expect(net.landed.map((w) => w.level).at(-2)).not.toBe(0);
+  });
+
+  it('still paces against the clock rather than firing everything at once', async () => {
+    const net = makeNet({ rtt: 300 });
+    await runNet(net, ramp(net, FADE_CONCURRENCY));
+    // Twelve writes spread over the fade, not twelve writes in the first 300ms.
+    expect(net.issued.filter((w) => w.at < 500).length).toBeLessThanOrEqual(3);
+    expect(net.landed.at(-1).at).toBeGreaterThan(2700);
+  });
+});
+
+describe('telling the settings screen when latency cannot fill the fade', () => {
+  it('says nothing until a transition has actually measured something', () => {
+    expect(readLatencyMs()).toBe(null);
+    expect(fadeLatencyNote(3000)).toBe(null);
+  });
+
+  it('says nothing at 3s on the latency measured on device', () => {
+    writeLatencyMs(300);
+    expect(stepsWithin(3000, 300)).toBe(FADE_STEPS);
+    expect(fadeLatencyNote(3000)).toBe(null);
+  });
+
+  it('speaks up for a short fade on that same connection', () => {
+    writeLatencyMs(300);
+    const note = fadeLatencyNote(1000);
+    expect(note).toContain('300ms');
+    expect(note).toContain('1.0s');
+    expect(note).toContain('6 volume steps');
+    // Factual, not an error, and not a threat to change anything.
+    expect(note).not.toMatch(/error|failed|cannot fade/i);
+  });
+
+  it('speaks up at 3s when the connection is genuinely slow', () => {
+    expect(stepsWithin(3000, 900)).toBeLessThan(MIN_SMOOTH_STEPS);
+    expect(fadeLatencyNote(3000, 900)).toBeTruthy();
+  });
+
+  it('counts the steps the ramp can actually land, concurrency included', () => {
+    // One write per round trip would make 3s at 300ms ten steps; two in flight makes the
+    // full twelve, which is why the notice does not appear in the measured range.
+    expect(stepsWithin(3000, 300)).toBe(FADE_STEPS);
+    expect(stepsWithin(1000, 300)).toBe(6);
+    expect(stepsWithin(3000, 1500)).toBe(4);
+    expect(stepsWithin(3000, null)).toBe(FADE_STEPS); // unknown is not a complaint
+  });
+
+  it('says nothing when the fade is switched off entirely', () => {
+    writeLatencyMs(1500);
+    expect(fadeLatencyNote(0)).toBe(null);
+  });
+
+  it('ignores junk rather than storing it', () => {
+    expect(writeLatencyMs(0)).toBe(null);
+    expect(writeLatencyMs('soon')).toBe(null);
+    expect(readLatencyMs()).toBe(null);
+  });
+
+  it('is persisted by a transition, so settings never has to ask Spotify', async () => {
+    const clock = makeClock();
+    const api = fakeApi({ volume: 70, rtt: 200, clock });
+    await startTransition(tavern, {
+      api, now: clock.now, sleep: clock.sleep, fadeMs: 3000,
+    });
+    expect(readLatencyMs()).toBe(200);
+  });
+});
+
 describe('a whole transition on a device that accepts volume', () => {
   it('fades out, switches, then fades back to the volume it started from', async () => {
     const clock = makeClock();
@@ -334,7 +589,8 @@ describe('a whole transition on a device that accepts volume', () => {
     expect(result.outcome).toBe(FADED);
     const volumes = volumesIn(api.calls);
     expect(volumes).toHaveLength(24);
-    expect(volumes.slice(0, 12)).toEqual([64, 58, 53, 47, 41, 35, 29, 23, 18, 12, 6, 0]);
+    expect(volumes.slice(0, 12)).toEqual([61, 52, 43, 36, 29, 22, 16, 11, 7, 4, 1, 0]);
+    expect(volumes.slice(12)).toEqual([1, 4, 7, 11, 16, 22, 29, 36, 43, 52, 61, 70]);
     expect(volumes.at(-1)).toBe(70);
   });
 
@@ -491,7 +747,9 @@ describe('a second tap while a ramp is still running', () => {
     api.setVolume = async (v) => {
       writes += 1;
       await plainSetVolume(v);
-      if (writes === 2) await gate; // park the first transition mid-fade-out
+      // Park the first transition mid-fade-out. Gating the FIRST write parks it after
+      // two, because the ramp now keeps a second write in flight (FADE_CONCURRENCY).
+      if (writes === 1) await gate;
     };
 
     const first = startTransition(tavern, {
@@ -530,7 +788,7 @@ describe('a second tap while a ramp is still running', () => {
     api.setVolume = async (v) => {
       writes += 1;
       await plainSetVolume(v);
-      if (writes === 2) await gate;
+      if (writes === 1) await gate;
     };
 
     const first = startTransition(tavern, { api, now: clock.now, sleep: clock.sleep });

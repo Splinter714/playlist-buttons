@@ -116,6 +116,48 @@ describe('the list is sorted before anything is dragged', () => {
   });
 });
 
+describe('the fade note about what the connection can do (#13)', () => {
+  const noteEl = () => root.querySelector('.section-note--latency');
+  const slider = () => root.querySelector('.fade-slider');
+
+  const paintWith = (fadeNoteFor) => renderSettings(root, {
+    loggedIn: true, fadeMs: 3000, candidates: buildCandidates(account), fadeNoteFor,
+  });
+
+  it('shows nothing at all when there is nothing to say', () => {
+    paintWith(() => null);
+    expect(noteEl().hidden).toBe(true);
+    expect(noteEl().textContent).toBe('');
+  });
+
+  it('shows nothing when no fade note is wired up at all', () => {
+    renderSettings(root, { loggedIn: true, candidates: buildCandidates(account) });
+    expect(noteEl().hidden).toBe(true);
+  });
+
+  it('puts the line beside the fade control, not somewhere else on the screen', () => {
+    paintWith((ms) => `only ${ms}`);
+    expect(noteEl().hidden).toBe(false);
+    expect(noteEl().closest('.settings-section').querySelector('h2').textContent).toBe('Fade');
+  });
+
+  it('follows the thumb, because that is the moment it is worth reading', () => {
+    // Short fades are where latency bites, so the line has to appear as the slider
+    // crosses into them rather than only on the next repaint.
+    paintWith((ms) => (ms < 2000 ? `room for ${ms / 250} steps` : null));
+    expect(noteEl().hidden).toBe(true);
+
+    slider().value = '1000';
+    slider().dispatchEvent(new Event('input'));
+    expect(noteEl().hidden).toBe(false);
+    expect(noteEl().textContent).toBe('room for 4 steps');
+
+    slider().value = '4000';
+    slider().dispatchEvent(new Event('input'));
+    expect(noteEl().hidden).toBe(true);
+  });
+});
+
 describe('the button number', () => {
   beforeEach(() => {
     writeRotation([{ id: 'ccc' }, { id: 'aaa' }]);

@@ -105,10 +105,10 @@ writes are applied in, and setting shuffle first raced the play call and lost on
 (#10): "no shuffle" started on track 1 and then shuffled everything after it. The shortcut
 had to do it in this order too. The finding is about Spotify, so it survived the rewrite.
 
-### Two things the ramp has to get right
+### Three things the ramp has to get right
 
-Both are consequences of the fade being twelve network round trips rather than twelve
-local writes.
+All of them are consequences of the fade being twelve network round trips rather than
+twelve local writes.
 
 **It is paced against the wall clock.** Each `PUT` is a 100–300ms round trip, so at twelve
 steps over 3s the requests alone can cost more than the fade is allowed to take. Sleeping
@@ -118,6 +118,19 @@ loop reads the clock before each write, and a run that has fallen behind **skips
 rather than overrunning**. A fade missing some of its steps still sounds like a fade; one
 that takes five seconds when it was set to three does not. The round trip is measured as
 it goes, so a write is issued early enough to *land* on its deadline.
+
+**Up to two writes are in flight at once.** Awaiting each response before sending the next
+put a floor under the step rate of one round trip, so at 250ms deadlines and 300ms round
+trips the ramp could not keep up and dropped levels to stay on schedule — which is what
+Jackson heard as choppy at the 3s setting. Two in flight decouples the step rate from
+latency and covers a round trip of up to 500ms at 3s. The cap is deliberately low: these
+are absolute writes, so two arriving out of order steps the volume audibly backwards. The
+final level of every ramp is written alone, after everything else has come back, so a
+ramp always ends exactly where it promised.
+
+When the measured round trip genuinely cannot fill the chosen duration with enough steps
+to sound smooth, the settings screen says so beside the slider. The fade is never
+silently stretched — the slider means what it says.
 
 **A second tap supersedes the first.** Two ramps writing volume at once would fight, and
 the second one must not read the current volume as the level to restore to — mid-fade-out
@@ -195,6 +208,14 @@ Twelve steps each way, one constant (`FADE_STEPS` in `src/transition.js`) rather
 number per direction. Twelve is what the shortcut's ramp used before iOS 27 cut it to
 four (#12); the steps are cheap again now that they are HTTP calls rather than Shortcuts
 actions.
+
+The twelve are spaced on an **equal-loudness curve**, not evenly through
+`volume_percent`. The ear responds roughly logarithmically, so a linear fade is nearly
+inaudible at the top and falls off a cliff at the bottom — the same twelve writes sound
+smoother placed where they are actually heard. The exponent is a constant
+(`LOUDNESS_EXPONENT`, 0.6, from Stevens' power law) so it can be tuned by ear; whether
+Spotify's own `volume_percent` is linear in amplitude is undocumented, and a tunable
+exponent is the hedge either way.
 
 The per-playlist fade setting is `nofadein` — the **no fade-in** pill on the playlist's
 settings row — which means the new playlist starts at full volume instead of ramping, as

@@ -215,6 +215,8 @@ function arrange(list, nodes) {
  * @param {(ids: string[]) => Array} opts.onReorder      returns the new candidate list
  * @param {(active: boolean) => void} opts.onDragChange  a drag started / finished
  * @param {(ms: number) => void}  opts.onFadeChange
+ * @param {(ms: number) => (string|null)} opts.fadeNoteFor  a line about what the measured
+ *   round trip can actually do with a fade this long, or null when there is nothing to say
  * @param {() => void} opts.onLogin
  */
 export function renderSettings(root, {
@@ -231,6 +233,7 @@ export function renderSettings(root, {
   onReorder = () => candidates,
   onDragChange = () => {},
   onFadeChange = () => {},
+  fadeNoteFor = () => null,
   onLogin = () => {},
 } = {}) {
   root.replaceChildren();
@@ -252,15 +255,31 @@ export function renderSettings(root, {
   slider.step = String(stepFadeMs);
   slider.value = String(fadeMs);
   slider.setAttribute('aria-label', 'Fade duration in seconds');
+  fade.append(slider);
+  fade.append(el('p', 'section-note', 'Used for the fade out and the fade in, for every playlist.'));
+
+  // What the connection can actually do with a fade this long (#13 playtest). The fade is
+  // left EXACTLY as the slider sets it — this never stretches anything — but a 1s fade on
+  // a 300ms round trip is six volume writes whatever anyone wants, and being told that
+  // beats wondering why short fades sound stepped. Hidden in the normal case, and it moves
+  // with the thumb, which is the moment it is worth reading.
+  const latencyNote = el('p', 'section-note section-note--latency');
+  const sayLatency = (ms) => {
+    const text = fadeNoteFor(ms);
+    latencyNote.textContent = text ?? '';
+    latencyNote.hidden = !text;
+  };
+  sayLatency(fadeMs);
+  fade.append(latencyNote);
+
   // `input` keeps the readout live under the thumb; the write is cheap enough to do on
   // every step, and doing it there means nothing is lost if the page reloads mid-drag.
   slider.addEventListener('input', () => {
     const ms = Number(slider.value);
     fadeValue.textContent = fadeLabel(ms);
+    sayLatency(ms);
     onFadeChange(ms);
   });
-  fade.append(slider);
-  fade.append(el('p', 'section-note', 'Used for the fade out and the fade in, for every playlist.'));
   page.append(fade);
 
   // ---- Buttons (#8) + order (#3) + no fade-in (#6) + no shuffle (#10) ---------------
