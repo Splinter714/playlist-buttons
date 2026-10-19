@@ -257,6 +257,39 @@ convention that 0 / 1 / 2 mean start / otherwise / end.
 `repeat.count` as an identifier is confirmed separately, out of the Shortcuts
 app binary.
 
+### The 5-call budget — why the fade is only 4 steps
+
+**Shortcuts rate-limits each action: after 5 runs it delays every further one by exactly
+one second.** Captured from the phone's own system log (issue #12):
+
+```
++[WFActionRateLimiter performAction:onQueue:withBlock:] Action "<private>" is being
+rate limited because it passed the threshold of 5 runs. Delaying execution for
+1.000000 seconds.
+```
+
+This shortcut used to run two 20-step ramps — 40 Set Volume calls — of which 35 were
+delayed a second each. On iOS 27 that turned a 6-second transition into about half a
+minute, and looked exactly like Set Volume having become slow. It has not: the volume
+operation completes in roughly **3ms**, on Bluetooth and the built-in speaker alike.
+
+So the fade is now **4 steps down and a single call back up**, which is the whole budget.
+`DOWN_STEPS` is not a smoothness dial — every step past the fifth call costs a full
+second.
+
+Two things that follow:
+
+- **Waits are not rate limited.** Literal and variable durations both measured accurate on
+  iOS 27, so the fade still lasts exactly as long as the settings screen asks. Only the
+  number of volume changes is capped.
+- **The counter is not per run.** A second run started immediately after a first is
+  throttled from its first call, so two transitions in quick succession share the 5. The
+  window's length has not been measured.
+
+To re-check any of this on a device: run the shortcut, then
+`sudo /usr/bin/log collect --device --last 2m --output /tmp/fade.logarchive`, and query
+with `log show /tmp/fade.logarchive --predicate 'eventMessage CONTAINS "WFActionRateLimiter"'`.
+
 ### The chaining rule — the thing that broke this twice
 
 **Generated plists do not inherit the implicit chaining the Shortcuts editor wires up

@@ -20,8 +20,30 @@ import { fileURLToPath } from 'node:url';
 // Tuning knobs — these are the values to change when tuning the fade by ear.
 // ---------------------------------------------------------------------------
 
-/** Number of volume steps in each ramp. More steps = smoother, more overhead. */
-const STEPS = 20;
+/**
+ * Steps in the fade-out, and the total Set Volume calls this shortcut may make.
+ *
+ * Shortcuts rate-limits each action: after 5 runs it delays every further one by
+ * exactly 1 second. Captured from the phone's own log (#12):
+ *
+ *   +[WFActionRateLimiter performAction:onQueue:withBlock:] Action "<private>" is being
+ *   rate limited because it passed the threshold of 5 runs. Delaying execution for
+ *   1.000000 seconds.
+ *
+ * It was 20 steps per ramp, 40 calls a transition, which bought 35 seconds of imposed
+ * delay and looked for all the world like Set Volume having become slow in iOS 27. It
+ * has not: the volume operation itself completes in about 3ms, on Bluetooth and on the
+ * built-in speaker alike.
+ *
+ * So the budget is 5 calls, and this spends 4 of them coming down and 1 going back up.
+ * Raising this costs one second per call over the budget — it is not a smoothness dial
+ * any more.
+ *
+ * The counter is NOT per run: a second run started straight after a first is throttled
+ * from its first call, so two transitions in quick succession share the 5. The window's
+ * length is unmeasured.
+ */
+const DOWN_STEPS = 4;
 
 /**
  * How the shortcut hands the phone back, as soon as the new playlist is playing, rather
@@ -468,12 +490,19 @@ const playBody = () => ({
  * One volume ramp. `fraction` is the expression, in terms of Repeat Index,
  * giving the share of V0 to be at on each step.
  */
-function ramp({ label, durationVar, fractionParts }) {
+/**
+ * One volume ramp: `steps` Set Volume calls, paced across `durationVar` milliseconds.
+ *
+ * The Wait is what gives the fade its duration. Waits are NOT rate limited — literal and
+ * variable durations were both measured accurate on iOS 27 — so the fade keeps the length
+ * the settings screen asks for. Only the number of volume changes is constrained.
+ */
+function ramp({ label, durationVar, steps, fractionParts }) {
   comment(label);
-  const step = calculate(varRef(durationVar), ` / ${STEPS} / 1000`);
+  const step = calculate(varRef(durationVar), ` / ${steps} / 1000`);
   setVariable(`${durationVar}Step`);
 
-  const loop = repeatStart(STEPS);
+  const loop = repeatStart(steps);
   const level = calculate(...fractionParts);
   setVolume(tokenAttachment(outRef(level, 'Calculation Result')));
   wait(tokenAttachment(varRef(`${durationVar}Step`)));
@@ -501,11 +530,12 @@ comment('Capture starting volume as V0');
 getDeviceVolume();
 setVariable('V0');
 
-// 3. Fade out, from V0 down to silence.
+// 3. Fade out, from V0 down to silence, in DOWN_STEPS steps paced over downMs.
 ramp({
-  label: `Fade out over downMs, in ${STEPS} steps`,
+  label: `Fade out over downMs, in ${DOWN_STEPS} steps`,
   durationVar: 'downMs',
-  fractionParts: [varRef('V0'), ` * (${STEPS} - `, varRef('Repeat Index'), `) / ${STEPS}`],
+  steps: DOWN_STEPS,
+  fractionParts: [varRef('V0'), ` * (${DOWN_STEPS} - `, varRef('Repeat Index'), `) / ${DOWN_STEPS}`],
 });
 
 // 4. Start the new playlist.
@@ -564,14 +594,17 @@ httpRequest({
 //    Tracked separately rather than left as a comment — see the issue referenced in
 //    shortcut/README.md.
 
-// 7. Fade back in to V0. upMs of 0 makes every wait 0, so the ramp collapses to
-//    an effectively instant jump back to V0 — which is what nofadein wants,
-//    without needing a separate branch.
-ramp({
-  label: `Fade in over upMs, in ${STEPS} steps (upMs of 0 lands on V0 immediately)`,
-  durationVar: 'upMs',
-  fractionParts: [varRef('V0'), ' * ', varRef('Repeat Index'), ` / ${STEPS}`],
-});
+// 7. Back up to V0 in a single call — the fifth and last of the budget.
+//
+//    This used to be a second ramp. It cannot be: two ramps of any useful length blow
+//    through the 5-call allowance and every call past it costs a whole second.
+//
+//    Consequence worth knowing: there is no fade-IN any more, for any playlist. The new
+//    track arrives at full volume. That makes #6's `nofadein` flag a no-op — it chose
+//    between ramping back up and jumping, and jumping is now the only option. `upMs` is
+//    still in the payload and still unused here.
+comment('Back to V0 in one call — the fade-in is gone, see DOWN_STEPS');
+setVolume(tokenAttachment(varRef('V0')));
 
 // 8. Back to Safari, with the whole transition finished.
 //
@@ -650,7 +683,7 @@ mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, toPlist(shortcut));
 
 console.log(`Wrote ${out}`);
-console.log(`  ${actions.length} actions, ${STEPS} steps per ramp`);
+console.log(`  ${actions.length} actions, ${DOWN_STEPS}-step fade-out + 1 restore = ${DOWN_STEPS + 1} Set Volume calls (budget is 5)`);
 console.log('\nNext:');
 console.log(
   '  npm run shortcut:sign   # signs to dist/signed/PlaylistButtons.shortcut, correctly named'
