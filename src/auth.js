@@ -1,11 +1,14 @@
 // Spotify Authorization Code flow with PKCE, entirely in the browser. No server, no
 // client secret — see the note in config.js about why the client ID is public.
 //
-// Two things here are load-bearing for issue #4:
-//   1. Tokens live in localStorage, because every transition reloads the page.
-//   2. Refresh happens on load and on a timer, NEVER lazily at the moment of use.
-//      An `await` between a tap and the navigation can cost gesture attribution, which
-//      is what makes iOS put the "Open in Shortcuts?" prompt back on screen.
+// Two things here were load-bearing for issue #4, and are now just sensible:
+//   1. Tokens live in localStorage. That was because every transition reloaded the page;
+//      it is now simply how a session survives a reload at all.
+//   2. Refresh happens on load and on a timer rather than lazily at the moment of use.
+//      The hard reason is gone — an `await` in the tap path used to risk losing gesture
+//      attribution and bringing iOS's "Open in Shortcuts?" prompt back (#13 retired that
+//      path) — but a background refresh still means a tap never waits on one, and
+//      `api.js` recovers from a 401 anyway.
 
 import {
   CLIENT_ID, SCOPES, AUTH_ENDPOINT, TOKEN_ENDPOINT,
@@ -46,8 +49,12 @@ export function isLoggedIn() {
 }
 
 /**
- * Synchronous token read for the tap path (issue #4). Deliberately does NOT check
- * expiry or refresh — that is the timer's job. Returns whatever is stored.
+ * Synchronous token read. Deliberately does NOT check expiry or refresh — that is the
+ * timer's job, and `request()` in api.js retries a 401 once.
+ *
+ * It existed for the tap path, which was forbidden to await (#4). That is no longer why
+ * it is here: `request()` uses it per call, and the grid uses it to decide whether a tile
+ * can do anything at all.
  */
 export function getAccessTokenSync() {
   return getAuth()?.access_token ?? null;
@@ -209,8 +216,8 @@ export function startRefreshTimer(onError = () => {}, onRefreshed = () => {}) {
   };
   tick();
   const id = setInterval(tick, REFRESH_CHECK_INTERVAL_MS);
-  // Coming back from the Shortcuts app is a fresh page load, but cover the case where
-  // the tab is merely restored from the background.
+  // A tab restored from the background may have sat there long enough for the token to
+  // age out, and its interval was throttled while it was away.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') tick();
   });

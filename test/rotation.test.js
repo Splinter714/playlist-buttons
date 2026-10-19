@@ -322,7 +322,7 @@ describe('joinRotation — rotation order over cached metadata', () => {
     });
   });
 
-  it('gives a playlist with no inorder stored the default, so handoff.js reads false', () => {
+  it('gives a playlist with no inorder stored the default, so a transition reads false', () => {
     const [p] = joinRotation([{ id: 'battle' }], meta);
     expect(p.inorder).toBe(false);
   });

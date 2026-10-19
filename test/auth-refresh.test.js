@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-// A background token refresh has to tell the app, because every tile's handoff href
-// embeds the token at render time. Without a repaint the grid keeps handing Shortcuts a
-// dead token and every tap 401s — and because each transition reloads the page, it only
-// shows up when the page has sat open long enough for the token to age out. It cost a
-// long debugging session on the real device.
+// A background token refresh has to tell the app, so the grid can repaint.
+//
+// This was urgent under the shortcut (#4): every tile's href embedded the token at render
+// time, so a silent refresh left the grid handing Shortcuts a dead token and every tap
+// 401ed — visible only after the page had sat open long enough for the token to age out,
+// which cost a long debugging session on the real device.
+//
+// It is milder since #13 — `api.js` reads the token per request and recovers from a 401 —
+// but the callback still matters: a tile that fell back to "opens in Spotify" for want of
+// a token should become a real button again when one arrives.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const KEY = 'pb.auth'; // storage.js prefixes every key with 'pb.'

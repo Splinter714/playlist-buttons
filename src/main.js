@@ -1,8 +1,10 @@
 // Entry point. The button grid (#2) is the main view; the debug table from #1 sits
 // behind a toggle underneath it.
 //
-// Cache-first is a hard requirement, not an optimisation: every transition reloads the
-// page (#4), so the grid paints from localStorage before anything touches the network.
+// Cache-first is still a hard requirement, though the reason changed: it used to be that
+// every transition reloaded the page (#4). It doesn't any more — the transition happens
+// in this tab (#13) — but the grid is the one thing on screen and it must never wait on
+// the network to appear, so it paints from localStorage first regardless.
 //
 // Two localStorage things, kept apart on purpose (#9): the ROTATION (which playlists are
 // buttons, in what order, which skip the fade-in — the source of truth, only ever changed
@@ -24,8 +26,11 @@ import {
   readFadeMs, writeFadeMs, MIN_FADE_MS, MAX_FADE_MS, FADE_STEP_MS,
 } from './settings.js';
 import { resolveView } from './view.js';
-import { renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTriggerRecorder, HANDOFF_ERROR_TEXT } from './grid.js';
-import { consumeHandoffError } from './handoff.js';
+import {
+  renderGrid, renderSkeleton, renderEmpty, renderSignedOut, attachTileHandler,
+  TRANSITION_FAILED_TEXT, NO_VOLUME_TEXT, NO_PLAYER_TEXT,
+} from './grid.js';
+import { startTransition, FADED, UNFADED, FAILED } from './transition.js';
 import { renderSettings } from './settings-view.js';
 import { readNowPlaying, resolveNowPlaying } from './nowplaying.js';
 import { renderDebugAuth, renderDebugPlaylists, setDebugStatus, initDebugToggle } from './debug.js';
@@ -42,8 +47,10 @@ const state = {
   // A refresh has come back, successfully or not.
   settled: false,
   candidateCount: null,
-  // Set when this load is the return leg of a shortcut run that failed (#4). Read off
-  // the URL once, on load, and shown on the grid until the next tap takes us away.
+  // How the last transition went (#13): `null`, or `{text, kind}` for the one line above
+  // the grid. It used to be read off the URL as `?err=1`, because the only moment the app
+  // was running after a transition was the page load the shortcut's return caused. The
+  // transition is in this tab now, so a failure can be reported as it happens.
   notice: null,
   // A row on the settings screen is under a finger right now (#3). Nothing may repaint
   // while that is true — a revalidation landing mid-drag would yank the row out from
@@ -121,6 +128,53 @@ function paintSettings() {
   });
 }
 
+/**
+ * One line above the grid about the transition that just ran (#13). Most outcomes say
+ * nothing — a fade that worked needs no commentary, and a superseded run returns
+ * `undefined` so the run that took over gets to speak instead.
+ */
+function noticeFor(result) {
+  if (result.outcome === FADED) return null;
+  if (result.outcome === FAILED) return { text: TRANSITION_FAILED_TEXT, kind: 'error' };
+  if (result.outcome === UNFADED) {
+    if (result.reason === 'no-volume-support') return { text: NO_VOLUME_TEXT, kind: 'info' };
+    if (result.reason === 'no-player') return { text: NO_PLAYER_TEXT, kind: 'info' };
+    return null; // the fade length is set to zero — nothing to explain
+  }
+  return undefined;
+}
+
+/**
+ * A tap. Takes as long as the fade takes, which is the whole difference from #4: the app
+ * stays on screen and in control for the entire transition instead of handing the phone
+ * to Shortcuts and hoping.
+ *
+ * `startTransition` owns the overlapping-taps problem — a second tap supersedes the ramp
+ * in flight rather than fighting it — so this does not need to guard against one.
+ */
+async function runTransition(id) {
+  const playlist = state.items.find((p) => p?.id === id);
+  if (!playlist) return;
+
+  // Repaint first: the now-playing marker moving is the feedback that something is
+  // happening, and the fade-out takes seconds before the music changes.
+  state.notice = null;
+  if (!state.dragging) paint();
+
+  const result = await startTransition(playlist);
+  const notice = noticeFor(result);
+  if (notice !== undefined) {
+    state.notice = notice;
+    if (!state.dragging) paint();
+  }
+  setDebugStatus(
+    result.outcome === FAILED
+      ? `transition failed: ${result.error?.message ?? 'unknown'}`
+      : `transition ${result.outcome}${result.reason ? ` (${result.reason})` : ''}`,
+    result.outcome === FAILED ? 'error' : '',
+  );
+}
+
 function paint() {
   const route = currentRoute();
   paintNav(route);
@@ -168,34 +222,21 @@ async function main() {
   initDebugToggle();
   purgeLegacyStorage();
 
-  // A `?err=1` on the URL. Nothing puts one there at the moment — `x-error` went with
-  // `x-success` (see handoff.js) — but reading and stripping it before anything else
-  // touches the URL stays correct, and is what error reporting gets rebuilt on.
-  if (consumeHandoffError()) {
-    state.notice = HANDOFF_ERROR_TEXT;
-    setDebugStatus('returned from the shortcut with ?err=1 — the transition failed', 'error');
-  }
-
   // One delegated listener for the life of the page: the grid re-renders, this does not.
-  // It records the tap and returns — the anchor's own navigation does the rest (#4).
-  attachTriggerRecorder(appEl);
+  // It records the tap and then runs the transition, which it is allowed to await (#13).
+  attachTileHandler(appEl, { onTap: runTransition });
 
   // Grid ⇄ settings. The hash is the whole router.
   window.addEventListener('hashchange', paint);
 
-  // Coming back from the shortcut (#4). This used to be a page LOAD — `x-success`
-  // navigated here when the run finished — and that reload was what re-rolled every
-  // tile's random start offset and refreshed every handoff href against the current
-  // token.
+  // Coming back to the tab. This carried real weight under the shortcut (#4): a
+  // transition left the app, so this repaint was what re-rolled every tile's start offset
+  // and rebuilt every href against the current token.
   //
-  // There is no callback any more. The shortcut hands the phone back itself, with an Open
-  // App action fired as soon as the playlist is playing, and a backgrounded app cannot
-  // switch apps — so a callback could only sit queued until Shortcuts was next opened by
-  // hand, at which point it fired and yanked the phone to Safari out of nowhere. Both are
-  // gone (handoff.js).
-  //
-  // So the repaint the reload used to do happens here instead, every time the page comes
-  // back to the front. Cheap: a render off state we already hold, no network.
+  // It does much less now — the transition never leaves the tab, and the offset is rolled
+  // at tap time — but a tab that has been in the background can still come back to a
+  // refreshed token or a changed rotation, and a render off state we already hold costs
+  // nothing.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     // Never under a finger — same rule as everywhere else (#3).
@@ -237,8 +278,8 @@ async function main() {
       setDebugStatus(`token refresh failed: ${e.message}`, 'error');
     },
     () => {
-      // Repaint so every tile's handoff href picks up the new token. Skipped while a
-      // settings row is being dragged, for the same reason as above.
+      // Repaint so a tile that fell back for want of a token becomes a real button
+      // again. Skipped while a settings row is being dragged, for the same reason above.
       renderDebugAuth();
       if (!state.dragging) paint();
     },

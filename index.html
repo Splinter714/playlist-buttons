@@ -9,7 +9,9 @@
 
     <!-- Installable as a standalone Home Screen app. Without a manifest (or the Apple
          meta below, for older iOS) "Add to Home Screen" makes a bookmark that opens in
-         Safari, and the shortcut's return trip lands in Safari too. -->
+         Safari rather than its own window. Nothing leaves the app during a transition
+         any more (#13), so this is now about how it looks, not about where a handoff
+         comes back to. -->
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -18,8 +20,7 @@
   </head>
   <body>
     <!-- The only navigation there is: grid ⇄ settings (#5/#6/#8), on the URL hash so
-         the phone's back gesture works and the return from a transition (#4) lands
-         back on the grid. -->
+         the phone's back gesture works. -->
     <header id="topbar">
       <span id="topbar-title">playlist buttons</span>
       <a id="nav-settings" href="#settings">settings</a>

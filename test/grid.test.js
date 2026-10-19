@@ -1,15 +1,25 @@
 // @vitest-environment jsdom
 //
-// The thing that matters about the grid is a DOM fact, not a function's return value:
-// every tile is an `<a>` whose handoff href is already on it before anything is tapped
-// (#4). Testing a click handler would test the wrong thing — there is deliberately no
-// click handler in the navigation path at all.
+// What matters about the grid changed with #13, and so did this file.
+//
+// It used to assert a DOM fact that was load-bearing: every tile is an `<a>` whose
+// `shortcuts://` href is already on it before anything is tapped, and the click handler
+// never calls `preventDefault` (`defaultPrevented === false` was asserted twice). Those
+// assertions existed to pin down the one thing that must not regress about the handoff
+// into Shortcuts — an await or a synthesised navigation in the tap path can lose gesture
+// attribution and bring iOS's "Open in Shortcuts?" prompt back (#4).
+//
+// There is no handoff any more, so those assertions were not protecting anything; they
+// were pinning the app to a constraint that no longer exists. They are rewritten here,
+// not deleted: the new tests say the opposite on purpose — tiles are buttons, and the
+// handler is allowed to await a transition that takes seconds — so that the change reads
+// as deliberate rather than as coverage quietly going missing.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  renderGrid, attachTriggerRecorder, HANDOFF_ERROR_TEXT, NO_TOKEN_TEXT, NO_URI_TEXT,
+  renderGrid, attachTileHandler,
+  NO_TOKEN_TEXT, NO_URI_TEXT, NO_VOLUME_TEXT, TRANSITION_FAILED_TEXT,
 } from '../src/grid.js';
-import { HANDOFF_ENDPOINT } from '../src/handoff.js';
 import { readNowPlaying } from '../src/nowplaying.js';
 
 const TOKEN = 'fake-access-token';
@@ -28,80 +38,119 @@ beforeEach(() => {
   document.body.append(root);
 });
 
-const tiles = () => Array.from(root.querySelectorAll('a.tile'));
-const payloadOf = (a) => {
-  const raw = a.getAttribute('href');
-  return JSON.parse(new URLSearchParams(raw.slice(raw.indexOf('?') + 1)).get('text'));
-};
-
+const tiles = () => Array.from(root.querySelectorAll('.tile'));
 const paint = (extra = {}) =>
-  renderGrid(root, { items, linkOptions: { token: TOKEN, random: () => 0.5 }, ...extra });
+  renderGrid(root, { items, linkOptions: { token: TOKEN }, ...extra });
+const tap = (node) => node.dispatchEvent(new window.MouseEvent('click', {
+  bubbles: true, cancelable: true,
+}));
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-describe('every tile is an anchor with its handoff href already in the DOM', () => {
-  it('renders one anchor per playlist, never a button or a div', () => {
+describe('every tile is a button (#13 — it used to have to be an anchor)', () => {
+  it('renders one button per playlist, never an anchor', () => {
     paint();
     expect(tiles()).toHaveLength(2);
-    for (const a of tiles()) expect(a.tagName).toBe('A');
-  });
-
-  it('has the shortcuts:// href on the anchor before any interaction', () => {
-    paint();
-    for (const a of tiles()) {
-      expect(a.getAttribute('href').startsWith(`${HANDOFF_ENDPOINT}?`)).toBe(true);
-      expect(a.dataset.handoff).toBe('handoff');
+    for (const node of tiles()) {
+      expect(node.tagName).toBe('BUTTON');
+      expect(node.type).toBe('button');
+      expect(node.hasAttribute('href')).toBe(false);
     }
   });
 
-  it('gives each tile its own playlist and its own fade values', () => {
+  it('carries no URL to navigate to — the tap runs a transition in this tab', () => {
     paint();
-    const [tavern, battle] = tiles().map(payloadOf);
-    expect(tavern.context_uri).toBe('spotify:playlist:aaa');
-    expect(battle.context_uri).toBe('spotify:playlist:bbb');
-    expect(tavern.upMs).toBe(3000);
-    expect(battle.upMs).toBe(0); // nofadein (#6)
+    expect(root.innerHTML).not.toContain('shortcuts://');
+    for (const node of tiles()) {
+      expect(node.dataset.mode).toBe('play');
+      expect(node.dataset.href).toBe(undefined);
+    }
   });
 
-  it('re-rolls the offset on every render, since every transition reloads the page', () => {
-    const rolls = [0.1, 0.1, 0.9, 0.9];
-    let i = 0;
-    const linkOptions = { token: TOKEN, random: () => rolls[i++] };
-    renderGrid(root, { items, linkOptions });
-    const first = tiles().map((a) => payloadOf(a).offset);
-    renderGrid(root, { items, linkOptions });
-    const second = tiles().map((a) => payloadOf(a).offset);
-    expect(first).toEqual([4, 1]);
-    expect(second).toEqual([36, 10]);
+  it('decides nothing about the transition at render time', () => {
+    // The offset used to be rolled into every href on every render. It is now rolled when
+    // a tile is tapped, so two renders are byte-identical.
+    paint();
+    const first = root.innerHTML;
+    paint();
+    expect(root.innerHTML).toBe(first);
+  });
+});
+
+describe('the tap path, which may now await', () => {
+  it('records now-playing immediately and hands the id to the transition', async () => {
+    const onTap = vi.fn(async () => {});
+    attachTileHandler(root, { onTap });
+    paint();
+
+    tap(tiles()[1]);
+    // The marker moves synchronously — that is the feedback while the fade-out runs.
+    expect(readNowPlaying()?.id).toBe('bbb');
+
+    await flush();
+    expect(onTap).toHaveBeenCalledWith('bbb');
   });
 
-  it('marks an in-order playlist offset 0 / shuffle off, and leaves the others alone (#10)', () => {
-    const mixed = [items[0], { ...items[1], inorder: true }];
-    renderGrid(root, { items: mixed, linkOptions: { token: TOKEN, random: () => 0.5 } });
-    const [tavern, battle] = tiles().map(payloadOf);
-    expect(tavern).toMatchObject({ offset: 20, shuffle: 'true' });
-    expect(battle).toMatchObject({ offset: 0, shuffle: 'false' });
+  it('awaits a handler that takes as long as a fade does', async () => {
+    // The old rule was that nothing in this path could await at all. This asserts the
+    // rule is gone: a slow handler runs to completion and the grid does not care.
+    let resolveTransition;
+    const onTap = vi.fn(() => new Promise((r) => { resolveTransition = r; }));
+    attachTileHandler(root, { onTap });
+    paint();
+
+    tap(tiles()[0]);
+    await flush();
+    expect(onTap).toHaveBeenCalledTimes(1);
+    resolveTransition();
+    await flush();
+    // And a second tap still works afterwards — nothing is left in a stuck state.
+    tap(tiles()[0]);
+    await flush();
+    expect(onTap).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps re-rolling the shuffled tiles while an in-order tile stays on track 1', () => {
-    const mixed = [items[0], { ...items[1], inorder: true }];
-    const rolls = [0.1, 0.9];
-    let i = 0;
-    const linkOptions = { token: TOKEN, random: () => rolls[i++] };
-    renderGrid(root, { items: mixed, linkOptions });
-    expect(tiles().map((a) => payloadOf(a).offset)).toEqual([4, 0]);
-    renderGrid(root, { items: mixed, linkOptions });
-    // Only one roll was consumed by the first render — the in-order tile never asks.
-    expect(tiles().map((a) => payloadOf(a).offset)).toEqual([36, 0]);
+  it('lets a rapid series of taps all through, for transition.js to supersede', async () => {
+    const onTap = vi.fn(async () => {});
+    attachTileHandler(root, { onTap });
+    paint();
+    tap(tiles()[0]);
+    tap(tiles()[1]);
+    tap(tiles()[0]);
+    await flush();
+    expect(onTap.mock.calls.map(([id]) => id)).toEqual(['aaa', 'bbb', 'aaa']);
+  });
+
+  it('ignores a tap that did not land on a tile', async () => {
+    const onTap = vi.fn(async () => {});
+    attachTileHandler(root, { onTap });
+    paint();
+    tap(root.querySelector('.grid'));
+    await flush();
+    expect(onTap).not.toHaveBeenCalled();
   });
 });
 
 describe('when there is no usable token', () => {
-  it('points the tile at Spotify instead of emitting a doomed handoff URL', () => {
+  it('points the tile at Spotify instead of pretending it can transition', () => {
     renderGrid(root, { items, linkOptions: { token: null } });
-    for (const a of tiles()) {
-      expect(a.getAttribute('href')).not.toContain('shortcuts://');
-      expect(a.getAttribute('href')).toContain('open.spotify.com');
-      expect(a.classList.contains('tile--nohandoff')).toBe(true);
+    for (const node of tiles()) {
+      expect(node.dataset.mode).toBe('fallback');
+      expect(node.dataset.href).toContain('open.spotify.com');
+      expect(node.classList.contains('tile--fallback')).toBe(true);
     }
+  });
+
+  it('opens Spotify on tap, and does not record a transition that cannot happen', async () => {
+    const onTap = vi.fn(async () => {});
+    const onOpen = vi.fn();
+    attachTileHandler(root, { onTap, onOpen });
+    renderGrid(root, { items, linkOptions: { token: null } });
+
+    tap(tiles()[0]);
+    await flush();
+    expect(onOpen).toHaveBeenCalledWith('https://open.spotify.com/playlist/aaa');
+    expect(onTap).not.toHaveBeenCalled();
+    expect(readNowPlaying()).toBe(null);
   });
 
   it('says so on the grid rather than looking normal and failing on tap', () => {
@@ -113,59 +162,44 @@ describe('when there is no usable token', () => {
     const [tavern, battle] = items;
     renderGrid(root, {
       items: [tavern, { ...battle, uri: undefined }],
-      linkOptions: { token: TOKEN, random: () => 0.5 },
+      linkOptions: { token: TOKEN },
     });
     const [a, b] = tiles();
-    expect(a.dataset.handoff).toBe('handoff');
-    expect(b.dataset.handoff).toBe('fallback');
+    expect(a.dataset.mode).toBe('play');
+    expect(b.dataset.mode).toBe('fallback');
     expect(root.textContent).toContain(NO_URI_TEXT);
     expect(root.textContent).not.toContain(NO_TOKEN_TEXT);
   });
 
-  it('says nothing when every tile got a real handoff', () => {
+  it('says nothing when every tile can really transition', () => {
     paint();
     expect(root.querySelector('.grid-notice')).toBe(null);
   });
 });
 
-describe('coming back from a failed shortcut run', () => {
-  it('shows the failure above the grid, with the grid still usable', () => {
-    paint({ notice: HANDOFF_ERROR_TEXT });
-    expect(root.querySelector('.grid-notice--error').textContent).toBe(HANDOFF_ERROR_TEXT);
+describe('the one line above the grid about the last transition (#13)', () => {
+  it('shows a failed transition as an error, with the grid still usable', () => {
+    paint({ notice: { text: TRANSITION_FAILED_TEXT, kind: 'error' } });
+    expect(root.querySelector('.grid-notice--error').textContent).toBe(TRANSITION_FAILED_TEXT);
     expect(tiles()).toHaveLength(2);
   });
-});
 
-describe('the tap path stays a plain link navigation', () => {
-  it('records now-playing without preventing the default navigation', () => {
-    attachTriggerRecorder(root);
-    paint();
-    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true });
-    tiles()[1].dispatchEvent(event);
-    expect(readNowPlaying()?.id).toBe('bbb');
-    expect(event.defaultPrevented).toBe(false);
+  it('shows a device that cannot be faded quietly, as information rather than failure', () => {
+    paint({ notice: { text: NO_VOLUME_TEXT, kind: 'info' } });
+    const line = root.querySelector('.grid-notice');
+    expect(line.textContent).toBe(NO_VOLUME_TEXT);
+    expect(line.classList.contains('grid-notice--info')).toBe(true);
+    // It never stops the grid working — the playlist did switch, just without a fade.
+    expect(tiles()).toHaveLength(2);
+  });
+
+  it('treats a bare string as an error, which is what every caller of that shape meant', () => {
+    paint({ notice: 'something went wrong' });
+    expect(root.querySelector('.grid-notice--error').textContent).toBe('something went wrong');
   });
 });
 
 describe('the grid stays one kind of tile', () => {
-  it('gives every tile a live href — there is no mode in which one is parked', () => {
-    paint();
-    for (const a of tiles()) {
-      expect(a.hasAttribute('href')).toBe(true);
-      expect(a.dataset.playHref).toBe(undefined);
-    }
-  });
-
-  it('never prevents a default, however many times the same tile is tapped', () => {
-    attachTriggerRecorder(root);
-    for (let i = 0; i < 3; i++) {
-      paint();
-      const event = new window.MouseEvent('click', { bubbles: true, cancelable: true });
-      tiles()[0].dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(false);
-    }
-  });
-
   it('keeps the grid pure cover art — the per-playlist flags are settings\' business', () => {
     // The flags used to show as markers on the tile inside edit mode. Order moved to the
     // settings screen (#3) and the markers went with it: the difference they describe is
@@ -174,12 +208,10 @@ describe('the grid stays one kind of tile', () => {
       { ...items[0], nofadein: true, inorder: true },
       { ...items[1], nofadein: false, inorder: false },
     ];
-    renderGrid(root, { items: marked, linkOptions: { token: TOKEN, random: () => 0.5 } });
+    renderGrid(root, { items: marked, linkOptions: { token: TOKEN } });
     expect(root.querySelectorAll('.tile-flag')).toHaveLength(0);
     expect(root.textContent).not.toContain('no fade');
     expect(root.textContent).not.toContain('no shuffle');
-    // …and the flags still reach the shortcut, which is where they actually matter.
-    expect(payloadOf(tiles()[0])).toMatchObject({ upMs: 0, offset: 0, shuffle: 'false' });
   });
 
   it('offers no rearrange control — that lives on the settings screen now', () => {
@@ -187,5 +219,13 @@ describe('the grid stays one kind of tile', () => {
     expect(root.querySelector('.grid-edit')).toBe(null);
     expect(root.querySelector('.grid-bar')).toBe(null);
     expect(root.textContent.toLowerCase()).not.toContain('rearrange');
+  });
+
+  it('marks the now-playing tile and nothing else', () => {
+    paint({ nowPlayingId: 'bbb' });
+    const [a, b] = tiles();
+    expect(a.classList.contains('is-playing')).toBe(false);
+    expect(b.classList.contains('is-playing')).toBe(true);
+    expect(b.getAttribute('aria-label')).toBe('Battle (playing)');
   });
 });

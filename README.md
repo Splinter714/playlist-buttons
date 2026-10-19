@@ -7,89 +7,126 @@ track 1 if it's marked that way — and it fades back in.
 
 ## Why it's shaped this way
 
-iOS blocks programmatic volume control on the web. Both paths were tested and both
-fail on iPhone:
+The fade is the whole app, and for most of this project's life the fade could not live
+here. It lived in an iOS shortcut, and the reason was real:
 
 - **Web Playback SDK `setVolume()`** — WebKit makes `HTMLMediaElement.volume`
   read-only, so it silently no-ops. (The SDK itself *does* run in iOS Safari,
   contrary to Spotify's docs.)
-- **`PUT /me/player/volume`** — also fails against the mobile web player.
+- **`PUT /me/player/volume`** — tested, and it failed too.
 
-Spotify's built-in crossfade doesn't help either: it only applies when a track ends
-on its own, not on a triggered playlist change.
+Spotify's built-in crossfade doesn't help either: it only applies when a track ends on
+its own, not on a triggered playlist change. What *can* set volume on iOS is the
+Shortcuts app — so the volume ramp went into a shortcut (#4), and everything else stayed
+in the web app.
 
-What *can* set volume on iOS is the Shortcuts app. So the volume ramp lives in a
-shortcut, and everything else lives in the web app.
+### What that got wrong, and when it dissolved
+
+The first finding still holds. The second one was true as measured and wrong as
+generalised, and the distinction is the thing worth remembering:
+
+**Remote volume is a property of the playback DEVICE, not of the API.** The test that
+dismissed `PUT /me/player/volume` was run with the phone as Spotify's playback device. A
+phone driving a Bluetooth speaker has no remote volume to set — Spotify sees the *phone*
+as the device and the speaker is only an output, so the only volume in the picture is iOS
+system volume, which is exactly what WebKit won't give a page. The API wasn't refusing;
+there was nothing there to turn.
+
+Put a **Spotify Connect device** in front of it and the same call works. Tested on device
+2026-10-19: with the Mac as the player, Jackson moved the Mac's volume from his phone's
+Spotify. `GET /me/player` reports this per device as `device.supports_volume`, which is
+the app's own way of asking the question now.
+
+The push to go back and retest came from iOS 27 (#12): it made the Shortcuts `Set Volume`
+action expensive per call — around 1.5s each, established by splitting a probe shortcut
+until only that action was left — which capped a transition at five calls. The fade
+degenerated to four coarse steps down and the fade-in disappeared entirely. So the
+shortcut route got worse at the same moment the API route turned out to have been
+available all along.
+
+**The fade now lives in the app** (#13). On tap: read the device's volume, ramp it to zero
+over the configured fade, start the new playlist, ramp back up. About 24 volume calls per
+transition, twelve each way.
+
+What that deleted, rather than merely moved: the `shortcuts://` handoff, the app switch to
+Shortcuts and back, the 5-call budget, the reimport-after-every-change cycle, the whole
+class of plist-shape bugs that dominated #4 — and, in the app itself, the rule that every
+tile had to be a real `<a>` with its href built at render time and nothing in the tap path
+allowed to `await`. That rule existed solely to keep iOS from showing an "Open in
+Shortcuts?" prompt on the handoff. With no Shortcuts in the path, tiles are ordinary
+buttons with async handlers.
+
+### The case the shortcut still answers
+
+Phone-as-player with a Bluetooth speaker is still the case the API cannot fade, because
+the limitation was never the API. `shortcut/` and its generator stay in the repo,
+unchanged and still buildable, as recoverable history for exactly that — see
+`shortcut/README.md`, which also holds the record of making it work on device. Nothing in
+`src/` references it.
+
+The app does not pretend the case away. If `GET /me/player` says the active device will
+not take remote volume, the playlist switches **immediately, at full volume**, and the
+grid says so in one quiet line. Never silently nothing, and never a refusal to switch —
+the music changing is the point, the fade is the polish.
 
 ### Why not a native iOS app
 
-A native app could set system volume directly and skip the Shortcuts handoff
-entirely — no app switch, no `x-success`, no page reload per transition. That's a
-real advantage, and it was weighed rather than overlooked.
+A native app could set system volume directly, which would fade the phone-as-player case
+too. It was weighed rather than overlooked, and it loses on cost: Xcode and Swift instead
+of the plain-JS + Vite stack reused across these projects, an Apple Developer account to
+keep the app installed past the 7-day sideload window, and a rebuild-and-reinstall cycle
+in place of pushing to Pages.
 
-It loses on cost. Native means Xcode and Swift instead of the plain-JS + Vite stack
-reused across these projects, an Apple Developer account to keep the app installed
-past the 7-day sideload window, and a rebuild-and-reinstall cycle in place of pushing
-to Pages.
-
-The deciding factor was that the handoff was tested before being built on. A throwaway
-two-action shortcut proved `x-success` returns to Safari with no iOS confirmation
-prompt — provided the app fires it from a real link tap under a user gesture, since
-address-bar navigation *does* prompt — and the app switch was unobtrusive in practice.
-The main thing native would have fixed turned out not to hurt.
+It was a closer call when the shortcut was in the path, because the thing native would
+have fixed was the app switch — and a throwaway spike had already shown the switch was
+tolerable, so the main advantage turned out not to hurt. The switch is gone now, which
+removes the last of that advantage: there is no handoff left to improve on.
 
 ## Architecture
 
-The web app is a remote — it never plays audio. The native Spotify app is the
-player, a Bluetooth speaker is the output, and the shortcut fades iOS system volume.
+The web app is a remote — it never plays audio. Spotify is the player. Everything a
+transition does is a Web API call from this tab:
 
 ```
-web app  ──shortcuts://x-callback-url──▶  shortcut
-(UI, config, playlist data)               ├─ ramp system volume down
-                                          ├─ PUT /me/player/play  (new playlist)
-                                          └─ ramp back up (or jump to full)
+tap a tile
+  ├─ GET  /me/player                    read the device's volume, and whether it fades
+  ├─ PUT  /me/player/volume  × 12       ramp down to silence
+  ├─ PUT  /me/player/play               the new playlist, at the chosen track
+  ├─ PUT  /me/player/shuffle            on, or off for an `inorder` playlist
+  └─ PUT  /me/player/volume  × 12       ramp back up (or one call, for `nofadein`)
 ```
 
-One visible app switch per transition — Safari to Shortcuts and back. Audio
-continues throughout.
+No app switch, no page reload, nothing queued in another app. The app stays on screen and
+in control for the whole transition, which is what makes it able to *report* a failure —
+under the shortcut a failed transition was silent by construction.
 
-The switch is as short as it can be made: an Open App action right after the play
-call brings Safari straight back, so the phone is on the grid again as soon as the
-new playlist is playing and the fade-in finishes behind it. Safari, not the web
-app — Shortcuts' Open App does not list installed web apps, and the app is used
-from a Safari tab for the same reason.
+**Play comes before shuffle, not after.** Spotify does not guarantee the order two Player
+writes are applied in, and setting shuffle first raced the play call and lost on device
+(#10): "no shuffle" started on track 1 and then shuffled everything after it. The shortcut
+had to do it in this order too. The finding is about Spotify, so it survived the rewrite.
 
-There is **no `x-success` and no `x-error`**. Both were tried and removed on the
-evidence: a backgrounded app cannot switch apps, so once the shortcut had put Safari
-in front the callback sat queued and then fired at the next unrelated moment
-Shortcuts was opened by hand, yanking the phone to Safari out of nowhere. The run
-itself is not suspended — the fade-in completes normally — it is only the app
-switch that waits, which makes a callback useless for reporting anything in time
-and annoying the rest of the time.
+### Two things the ramp has to get right
 
-Nothing is lost that worked: with no error branch left in the shortcut, a failed
-transition was already silent. The app does lose its page load per transition,
-which is what the offset re-roll used to ride on — see Shuffle, below.
+Both are consequences of the fade being twelve network round trips rather than twelve
+local writes.
 
-Dropping the callbacks was tried once before and reverted, because with no callback
-the shortcut finished and left you standing in Shortcuts. That reason is gone now
-that the shortcut returns by itself.
+**It is paced against the wall clock.** Each `PUT` is a 100–300ms round trip, so at twelve
+steps over 3s the requests alone can cost more than the fade is allowed to take. Sleeping
+`duration / steps` between calls would overrun the setting, and overrun it *more* the
+slower the connection, which is the wrong way round. So every step has a deadline, the
+loop reads the clock before each write, and a run that has fallen behind **skips levels
+rather than overrunning**. A fade missing some of its steps still sounds like a fade; one
+that takes five seconds when it was set to three does not. The round trip is measured as
+it goes, so a write is issued early enough to *land* on its deadline.
 
-### Why the app switch can't be avoided
+**A second tap supersedes the first.** Two ramps writing volume at once would fight, and
+the second one must not read the current volume as the level to restore to — mid-fade-out
+that is on its way to zero, and every tap would quietly ratchet the music down. So a new
+transition cancels the one in flight and inherits its original volume, which is carried
+along until a transition finishes cleanly.
 
-Asked and checked rather than assumed: there is no way to run a shortcut in the
-background from a web page. `shortcuts://run-shortcut` and its `x-callback-url`
-form both foreground the Shortcuts app by design, and Apple ships no background
-variant — the open feedback request asking for a `shortcuts-background://` scheme
-([FB11516273](https://github.com/feedback-assistant/reports/issues/356)) is still
-a request. The ways a shortcut *does* run without a visible switch — personal
-automations, widgets, the Action Button, Control Center, Siri — are all triggered
-by the system or by a direct tap on that control, and none of them can be fired
-from a page in Safari.
-
-So the switch is not a rough edge to file down; it is the price of the only API
-that can set iOS system volume from outside a native app. The thing that would
-remove it is a native app, ruled out above on cost.
+And when a request fails mid-ramp, the volume is put back in one call before anything
+else. Getting the user's volume back matters more than completing the transition.
 
 ## Membership and ordering
 
@@ -118,12 +155,13 @@ member block either; leaving the rotation is a tap, not a gesture.
 
 Reordering used to live on the grid, behind an edit mode that turned tap-to-play off
 while you dragged. Moving it here deleted the mode outright, and with it the only
-`preventDefault` in the app — which mattered more than the tidiness: #4's on-device spike
-found that suppressing or synthesising navigation is what brings iOS's "Open in
-Shortcuts?" prompt back, so the fewer places a tap on a tile is anything but a plain link
-navigation, the better. Every tile on the grid is now a live link, always. Dragging a row
-on a settings screen was never risky in the way dragging a live button was, so the mode
-had nothing left to protect.
+`preventDefault` in the app — which at the time mattered more than the tidiness, because
+#4's on-device spike had found that suppressing or synthesising navigation is what brings
+iOS's "Open in Shortcuts?" prompt back. That particular danger is gone with the shortcut
+(#13), and the grid's tiles are buttons now rather than links. The reason to keep
+reordering on the settings screen is the one that survives either way: the grid has ONE
+kind of tile and no mode to get stuck in, and the rotation is already decided on the
+screen where you drag it.
 
 This started out the other way round. Membership lived in the playlist description as
 a `[game order:3 nofadein]` tag, which was appealing because it's managed from the
@@ -150,18 +188,29 @@ own, which is the whole point.
 
 One duration, used for both the fade out and the fade in, 3s by default, adjustable on
 the settings screen and stored in `localStorage` alongside the rotation. It's global —
-there's no per-playlist fade length. The per-playlist fade setting is `nofadein` — the
-**no fade-in** pill on the playlist's settings row — which means the new playlist starts
-at full volume instead of ramping (`upMs: 0`).
+there's no per-playlist fade length. Zero is a permitted value, and means no fade at all:
+the playlist just switches.
+
+Twelve steps each way, one constant (`FADE_STEPS` in `src/transition.js`) rather than a
+number per direction. Twelve is what the shortcut's ramp used before iOS 27 cut it to
+four (#12); the steps are cheap again now that they are HTTP calls rather than Shortcuts
+actions.
+
+The per-playlist fade setting is `nofadein` — the **no fade-in** pill on the playlist's
+settings row — which means the new playlist starts at full volume instead of ramping, as
+a single volume call rather than a ramp. That pill means something again: under the
+shortcut's 5-call budget there was no fade-in left for it to skip, so it had quietly
+become a no-op (#6, #12).
 
 ## Shuffle, and playing in order
 
-By default a playlist starts shuffled from a random track. The offset is re-rolled every
-time a tile's href is built, which is every render — originally once per transition,
-because every transition ended in a page load. That reload is gone: the shortcut returns
-to the app mid-run and there is no callback to reload it, so the app repaints on
-`visibilitychange` instead. Same effect, no page load: coming back
-from a transition re-rolls every tile. A playlist can instead be marked
+By default a playlist starts shuffled from a random track. The offset is rolled when a
+tile is TAPPED, which is the obvious place for it and took two detours to get to: it
+started out rolled into each tile's href at render time, because every transition ended
+in a page load and that reload was the re-randomising step; when the reload went away the
+app re-rolled on `visibilitychange` instead, to keep the same effect. With the whole
+transition in the tap handler (#13) neither trick is needed — the tap decides, once, for
+the playlist being tapped. A playlist can instead be marked
 `inorder` on the settings screen — the **no shuffle** pill — which starts it at track 1
 with shuffle off, the same way every time (#10). It's a second, independent pill beside
 **no fade-in**, not a combined control: a playlist can start loud, start at track 1, both or
@@ -171,30 +220,27 @@ Both pills name the *exception* rather than the behaviour ("no fade-in", not "fu
 volume"; "no shuffle", not "in order"), so an unlit row reads as "nothing unusual about
 this one" at a glance down a list that is mostly unlit.
 
-## Shortcut contract
+## What one tap decides
 
-Receives JSON as input:
+Resolved at **tap time**, from the rotation entry and the fade setting:
 
-```json
-{ "token": "...", "context_uri": "spotify:playlist:...", "offset": 47,
-  "shuffle": true, "downMs": 3000, "upMs": 3000,
-  "return_url": "https://splinter714.github.io/playlist-buttons/" }
+```js
+{ contextUri: 'spotify:playlist:…', position: 47, shuffle: true,
+  downMs: 3000, upMs: 3000 }
 ```
 
-`return_url` is where the shortcut sends the phone back to, partway through its
-own run. It travels in the payload rather than being baked into the shortcut so
-one installed shortcut serves both the dev server and the Pages build.
+`shuffle` and `position` are decided together: normally `true` with a random offset, and
+for an `inorder` playlist `false` with `position: 0`. A random offset with shuffle off
+would play the rest of the playlist from a random point, and position 0 with shuffle on
+would not start on track 1 at all — so they are one decision in two fields.
 
-`shuffle` and `offset` are decided together: normally `true` with a random offset, and
-for an `inorder` playlist `false` with `offset: 0`.
+`upMs: 0` is `nofadein`: restore the captured volume in one call instead of ramping. The
+restore happens *after* the play call returns, so the outgoing track never jumps back up.
 
-The shortcut applies them in that order too — play first, naming the start track with
-`offset`, then shuffle. Setting shuffle first raced the play call and lost, so "no
-shuffle" started on track 1 and shuffled everything after it; Spotify does not guarantee
-the order two Player writes are applied in. See `shortcut/README.md`.
-
-`upMs: 0` means restore to full volume immediately instead of ramping. The restore
-happens *after* the play call returns, so the outgoing track never jumps back up.
+This used to be a JSON payload percent-encoded into a `shortcuts://` URL, built at render
+time because the tap path was not allowed to compute anything. Now it is a plain object
+built in the click handler, which is why the start offset is re-rolled per *tap* rather
+than per *render*.
 
 ## Scopes
 

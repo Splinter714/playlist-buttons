@@ -53,9 +53,13 @@ export function clearSettings() {
 }
 
 /**
- * The two numbers the shortcut contract takes (#4), from the one setting plus the
- * playlist's own `nofadein` (#6). `upMs: 0` means restore to the captured volume
- * immediately rather than ramping.
+ * The two durations a transition needs (#13), from the one setting plus the playlist's own
+ * `nofadein` (#6). `upMs: 0` means restore to the captured volume in a single call rather
+ * than ramping back up.
+ *
+ * `nofadein` means something again. Under the shortcut's iOS 27 rate limit (#12) there was
+ * no fade-in left for it to skip, so the flag had quietly become a no-op; now that the
+ * ramp is twelve API calls in this app, it is a real per-playlist choice.
  */
 export function resolveFade(nofadein, fadeMs = readFadeMs()) {
   const downMs = clampFadeMs(fadeMs);

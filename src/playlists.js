@@ -1,13 +1,15 @@
 // The playlist metadata cache: everything `GET /me/playlists` returns, flattened to the
-// few fields the grid and the handoff need.
+// few fields the grid and a transition need.
 //
 // Since #9 this is NOT the rotation. It is the candidate list — every playlist the user
 // has, owned or followed — and the rotation (rotation.js) picks ids out of it. Nothing
 // here filters, parses a tag, assigns an order or writes anything back.
 //
-// Cache-first is a hard requirement, not an optimisation: issue #4 makes every transition
-// a full page reload, so the return trip must paint from localStorage instantly and
-// revalidate behind it. Never block first paint on the network.
+// Cache-first is a hard requirement, not an optimisation. The original reason was that
+// issue #4 made every transition a full page reload, so the return trip had to paint from
+// localStorage instantly; #13 removed the reload, but the grid is still the only thing on
+// screen and must never wait on a request to appear. Never block first paint on the
+// network, and revalidate behind it.
 
 import { getAllPlaylists } from './api.js';
 import { read, write, remove } from './storage.js';
@@ -54,7 +56,7 @@ export function purgeLegacyStorage() {
   for (const key of LEGACY_KEYS) remove(key);
 }
 
-/** The cached shape, deliberately small — exactly what the grid and the handoff need. */
+/** The cached shape, deliberately small — exactly what the grid and a transition need. */
 export function toCacheEntry(playlist) {
   return {
     id: playlist.id,

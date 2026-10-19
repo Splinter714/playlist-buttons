@@ -63,8 +63,10 @@ describe('the generated shortcut takes shuffle from its input (#10)', () => {
   });
 
   it('still takes the start position from the app rather than choosing one', () => {
-    // Offset and shuffle travel together from handoff.js — an in-order playlist arrives
-    // as `offset: 0`, so there is no number in here to keep in step with the app.
+    // Offset and shuffle travelled together in the handoff payload — an in-order playlist
+    // arrived as `offset: 0`, so there is no number in here to keep in step with the app.
+    // (The shortcut is retired as of #13; this suite still pins the generator's output,
+    // since the generator is kept for the phone-as-player case. See shortcut/README.md.)
     expect(plist).toMatch(/<key>VariableName<\/key>\s*<string>offset<\/string>/);
   });
 

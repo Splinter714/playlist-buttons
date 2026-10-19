@@ -42,9 +42,9 @@ export const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';
 export const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
 export const API_BASE = 'https://api.spotify.com/v1';
 
-// Refresh when under this much time is left. Never lazily at tap time — issue #4:
-// an `await` between the tap and the navigation can lose gesture attribution and
-// bring the iOS "Open in Shortcuts?" prompt back.
+// Refresh when under this much time is left, from a background timer rather than lazily
+// at tap time. The original reason was issue #4's gesture-attribution rule, which #13
+// retired along with the shortcut; keeping it means a tap still never waits on a refresh.
 export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 export const REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
 

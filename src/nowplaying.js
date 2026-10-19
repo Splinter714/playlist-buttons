@@ -1,9 +1,10 @@
 // Which playlist is playing, as far as this app knows.
 //
 // Deliberately local-only: the marker records what THIS app last triggered, written at
-// tap time, so it is correct on the very first paint after the reload that issue #4's
-// handoff forces. Asking Spotify would be more truthful but would arrive after the
-// grid is already on screen, which is the one thing the marker must not do.
+// tap time. That is what makes it instant — it moves to the tapped tile while the
+// fade-out is still running (#13), seconds before the music actually changes. Asking
+// Spotify would be more truthful but would arrive after the grid is already on screen,
+// and during a fade it would still be reporting the OLD playlist.
 //
 // Known tradeoff, accepted by Jackson (#2): change playlist from the Spotify app
 // directly and this marker is wrong until the next tap here.
@@ -20,9 +21,11 @@ export function readNowPlaying() {
 }
 
 /**
- * Record a trigger. Called synchronously from the tile's click handler — it must never
- * await or preventDefault, because the navigation that follows is the link tap itself
- * and losing gesture attribution is what brings iOS's confirmation prompt back (#4).
+ * Record a trigger. Called first thing in the tile's click handler, before the transition
+ * is started, so the marker moves immediately.
+ *
+ * This used to carry a rule — never await, never preventDefault — that existed only to
+ * protect the handoff into Shortcuts (#4). That handoff is gone (#13) and so is the rule.
  */
 export function recordNowPlaying(id, now = Date.now()) {
   if (!id) return;

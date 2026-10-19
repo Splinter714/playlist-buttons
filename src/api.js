@@ -1,6 +1,14 @@
-// Spotify Web API calls. READ ONLY, and only playlist metadata — this app never touches
-// playback from the browser (the shortcut does that, see README and issue #4), and since
-// #9 it never writes anything to Spotify at all: the rotation lives in localStorage.
+// Spotify Web API calls: playlist metadata, and — since #13 — playback.
+//
+// This file used to say READ ONLY, because the iOS shortcut owned the whole transition
+// (#4). It doesn't any more. The fade, the playlist switch and the shuffle flag are all
+// done from here now, through `PUT /me/player/*`, which is what retired the shortcut.
+// See transition.js for why that became possible, and the README's "Why it's shaped
+// this way".
+//
+// Still true: the app never writes anything to the user's LIBRARY. The rotation lives in
+// localStorage (#9) and no playlist is ever edited. The writes below are all playback
+// control — volume, shuffle, what's playing — not data.
 
 import { API_BASE } from './config.js';
 import { getAccessTokenSync, refreshTokens, logout } from './auth.js';
@@ -81,4 +89,57 @@ export async function getAllPlaylists({ limit = 50, maxPages = 100 } = {}) {
     url = data.next || null;
   }
   return items;
+}
+
+// ---------------------------------------------------------------------------------
+// Playback (#13)
+// ---------------------------------------------------------------------------------
+// All four go through `request()` above, so they inherit its 401-refresh and its 429
+// backoff. That matters more here than it did for playlist reads: a transition is
+// roughly 24 requests, and a fast series of taps is the one thing in this app that can
+// plausibly reach Spotify's rate limit.
+
+/**
+ * The current playback state, or `null` when nothing is active (Spotify answers 204).
+ *
+ * Read for two things, both about the DEVICE rather than the track:
+ *  - `device.volume_percent` — the level to fade from and restore to. The ramp is simply
+ *    wrong without it: fading through absolute fractions assumes the device is at 100%,
+ *    and from 60% the first "fade out" step would jump the volume UP.
+ *  - `device.supports_volume` — whether this device accepts remote volume at all. A
+ *    Spotify Connect device (the Mac) does; the iPhone app driving a Bluetooth speaker
+ *    does not, because there Spotify sees the phone as the device and the speaker is
+ *    only an output, so "volume" is iOS system volume. That case switches playlist at
+ *    full volume instead (transition.js).
+ */
+export async function getPlayerState() {
+  return request('/me/player');
+}
+
+/** `volume_percent` is an integer 0–100; anything else is a 400. */
+export async function setVolume(percent) {
+  const v = Math.min(100, Math.max(0, Math.round(Number(percent) || 0)));
+  return request(`/me/player/volume?volume_percent=${v}`, { method: 'PUT' });
+}
+
+/**
+ * Shuffle on or off. Sent as the literal string `true`/`false` in the query — this is
+ * the one Spotify rejects as `400 Bad format for parameter state` if it arrives as
+ * anything else (found on device in #10, when a dictionary boolean reached it as 1/0).
+ */
+export async function setShuffle(state) {
+  return request(`/me/player/shuffle?state=${state === true ? 'true' : 'false'}`, { method: 'PUT' });
+}
+
+/**
+ * Start a context at a track position.
+ *
+ * Called BEFORE setShuffle, never after — see transition.js. Spotify does not guarantee
+ * the order two Player writes are applied in, and shuffle-first lost the race on device.
+ */
+export async function startPlayback({ contextUri, position = 0 }) {
+  return request('/me/player/play', {
+    method: 'PUT',
+    body: { context_uri: contextUri, offset: { position } },
+  });
 }

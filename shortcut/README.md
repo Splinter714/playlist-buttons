@@ -1,5 +1,21 @@
 # The PlaylistButtons shortcut
 
+> **RETIRED — kept as history (#13, 2026-10-19).**
+>
+> Nothing in `src/` references this shortcut any more. The web app does the fade itself,
+> through Spotify's own playback volume (`PUT /me/player/volume`), which works whenever a
+> Spotify Connect device is the player. Two things made that the better route: iOS 27 made
+> `Set Volume` expensive per call (#12), cutting the fade to four coarse steps and killing
+> the fade-in; and the API path turned out never to have been broken — the original test
+> that dismissed it was run with the PHONE as the playback device, which has no remote
+> volume to set.
+>
+> This directory and its generator stay, unchanged and still buildable, for the one case
+> they still answer: the phone as the player, with a Bluetooth speaker as the output, where
+> the only volume there is belongs to iOS. Everything below is the record of getting it
+> working on device — the plist shapes, the ordering findings, the dead ends — and it is
+> left exactly as it was written.
+
 The web app hands off to an iOS shortcut named **PlaylistButtons** to do the one
 thing iOS won't let a web page do: change system volume. The shortcut fades the
 volume down, switches playlist through the Spotify Web API, and fades back up.
